@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { createHash } from "crypto";
+import * as bcrypt from "bcrypt";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
@@ -16,19 +16,20 @@ const pool = new Pool({
     rejectUnauthorized: false,
   },
 });
+
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 10);
 }
 
 async function main() {
   console.log("🌱 Seeding database...");
 
-  const adminPassword = hashPassword("Admin123!");
-  const moderatorPassword = hashPassword("Moderator123!");
-  const citizenPassword = hashPassword("Citizen123!");
+  const adminPassword = await hashPassword("Admin123!");
+  const moderatorPassword = await hashPassword("Moderator123!");
+  const citizenPassword = await hashPassword("Citizen123!");
 
   // =========================
   // Users
