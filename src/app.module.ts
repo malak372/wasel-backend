@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { RoutesModule } from './routes/routes.module';
 import { CheckpointsModule } from './checkpoints/checkpoints.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { CitizenReportsModule } from './citizen-reports/citizen-reports.module';
@@ -22,6 +23,7 @@ import { CitizenReportsModule } from './citizen-reports/citizen-reports.module';
     ]),
     PrismaModule,
     AuthModule,
+    RoutesModule,
     CheckpointsModule,
     IncidentsModule,
     CitizenReportsModule,
