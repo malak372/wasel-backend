@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { createHash } from "crypto";
+import * as bcrypt from "bcrypt";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
@@ -16,19 +16,20 @@ const pool = new Pool({
     rejectUnauthorized: false,
   },
 });
+
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-function hashPassword(password: string): string {
-  return createHash("sha256").update(password).digest("hex");
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 10);
 }
 
 async function main() {
   console.log("🌱 Seeding database...");
 
-  const adminPassword = hashPassword("Admin123!");
-  const moderatorPassword = hashPassword("Moderator123!");
-  const citizenPassword = hashPassword("Citizen123!");
+  const adminPassword = await hashPassword("Admin123!");
+  const moderatorPassword = await hashPassword("Moderator123!");
+  const citizenPassword = await hashPassword("Citizen123!");
 
   // =========================
   // Users
@@ -119,17 +120,43 @@ async function main() {
   });
 
   // =========================
+  // Fixed valid UUIDs
+  // =========================
+  const REGION_NABLUS_GOVERNORATE_ID = "7d1a2c4e-5b6f-4a8d-9c10-1f2e3d4c5b6a";
+  const REGION_NABLUS_CITY_ID = "8a2b3c4d-6e7f-4a1b-9c2d-3e4f5a6b7c8d";
+  const REGION_BEIT_FURIK_ID = "9b3c4d5e-7f8a-4b1c-8d2e-4f5a6b7c8d9e";
+  const REGION_HUWARA_AREA_ID = "ac4d5e6f-8a9b-4c1d-8e2f-5a6b7c8d9e0f";
+
+  const CHECKPOINT_HUWARA_ID = "bd5e6f7a-9b0c-4d1e-8f2a-6b7c8d9e0f1a";
+  const CHECKPOINT_BEIT_FURIK_ID = "ce6f7a8b-0c1d-4e1f-9a2b-7c8d9e0f1a2b";
+
+  const INCIDENT_1_ID = "df7a8b9c-1d2e-4f1a-8b2c-8d9e0f1a2b3c";
+  const INCIDENT_2_ID = "e08b9c1d-2e3f-4a1b-9c2d-9e0f1a2b3c4d";
+
+  const REPORT_1_ID = "f19c1d2e-3f4a-4b1c-8d2e-0f1a2b3c4d5e";
+  const REPORT_2_ID = "a21d2e3f-4a5b-4c1d-9e2f-1a2b3c4d5e6f";
+  const REPORT_3_ID = "b32e3f4a-5b6c-4d1e-8f2a-2b3c4d5e6f7a";
+
+  const SUB_1_ID = "c43f4a5b-6c7d-4e1f-9a2b-3c4d5e6f7a8b";
+  const SUB_2_ID = "d54a5b6c-7d8e-4f1a-8b2c-4d5e6f7a8b9c";
+
+  const ALERT_1_ID = "e65b6c7d-8e9f-4a1b-9c2d-5e6f7a8b9c0d";
+  const ALERT_2_ID = "f76c7d8e-9f0a-4b1c-8d2e-6f7a8b9c0d1e";
+
+  const ROUTE_1_ID = "a87d8e9f-0a1b-4c1d-9e2f-7a8b9c0d1e2f";
+
+  // =========================
   // Regions
   // =========================
   const nablusGovernorate = await prisma.region.upsert({
-    where: { id: "11111111-1111-1111-1111-111111111111" },
+    where: { id: REGION_NABLUS_GOVERNORATE_ID },
     update: {
       name: "Nablus Governorate",
       regionType: "governorate",
       parentRegionId: null,
     },
     create: {
-      id: "11111111-1111-1111-1111-111111111111",
+      id: REGION_NABLUS_GOVERNORATE_ID,
       name: "Nablus Governorate",
       regionType: "governorate",
       parentRegionId: null,
@@ -137,14 +164,14 @@ async function main() {
   });
 
   const nablusCity = await prisma.region.upsert({
-    where: { id: "22222222-2222-2222-2222-222222222222" },
+    where: { id: REGION_NABLUS_CITY_ID },
     update: {
       name: "Nablus City",
       regionType: "city",
       parentRegionId: nablusGovernorate.id,
     },
     create: {
-      id: "22222222-2222-2222-2222-222222222222",
+      id: REGION_NABLUS_CITY_ID,
       name: "Nablus City",
       regionType: "city",
       parentRegionId: nablusGovernorate.id,
@@ -152,14 +179,14 @@ async function main() {
   });
 
   const beitFurik = await prisma.region.upsert({
-    where: { id: "33333333-3333-3333-3333-333333333333" },
+    where: { id: REGION_BEIT_FURIK_ID },
     update: {
       name: "Beit Furik",
       regionType: "village",
       parentRegionId: nablusGovernorate.id,
     },
     create: {
-      id: "33333333-3333-3333-3333-333333333333",
+      id: REGION_BEIT_FURIK_ID,
       name: "Beit Furik",
       regionType: "village",
       parentRegionId: nablusGovernorate.id,
@@ -167,14 +194,14 @@ async function main() {
   });
 
   const huwaraArea = await prisma.region.upsert({
-    where: { id: "44444444-4444-4444-4444-444444444444" },
+    where: { id: REGION_HUWARA_AREA_ID },
     update: {
       name: "Huwara Area",
       regionType: "area",
       parentRegionId: nablusCity.id,
     },
     create: {
-      id: "44444444-4444-4444-4444-444444444444",
+      id: REGION_HUWARA_AREA_ID,
       name: "Huwara Area",
       regionType: "area",
       parentRegionId: nablusCity.id,
@@ -233,7 +260,7 @@ async function main() {
   // Checkpoints
   // =========================
   const huwaraCheckpoint = await prisma.checkpoint.upsert({
-    where: { id: "55555555-5555-5555-5555-555555555555" },
+    where: { id: CHECKPOINT_HUWARA_ID },
     update: {
       name: "Huwara Checkpoint",
       latitude: new Prisma.Decimal("32.152200"),
@@ -243,7 +270,7 @@ async function main() {
       currentStatus: "delayed",
     },
     create: {
-      id: "55555555-5555-5555-5555-555555555555",
+      id: CHECKPOINT_HUWARA_ID,
       name: "Huwara Checkpoint",
       latitude: new Prisma.Decimal("32.152200"),
       longitude: new Prisma.Decimal("35.281100"),
@@ -254,7 +281,7 @@ async function main() {
   });
 
   const beitFurikCheckpoint = await prisma.checkpoint.upsert({
-    where: { id: "66666666-6666-6666-6666-666666666666" },
+    where: { id: CHECKPOINT_BEIT_FURIK_ID },
     update: {
       name: "Beit Furik Checkpoint",
       latitude: new Prisma.Decimal("32.177000"),
@@ -264,7 +291,7 @@ async function main() {
       currentStatus: "open",
     },
     create: {
-      id: "66666666-6666-6666-6666-666666666666",
+      id: CHECKPOINT_BEIT_FURIK_ID,
       name: "Beit Furik Checkpoint",
       latitude: new Prisma.Decimal("32.177000"),
       longitude: new Prisma.Decimal("35.300000"),
@@ -310,7 +337,7 @@ async function main() {
   // Incidents
   // =========================
   const incident1 = await prisma.incident.upsert({
-    where: { id: "77777777-7777-7777-7777-777777777777" },
+    where: { id: INCIDENT_1_ID },
     update: {
       title: "Heavy Traffic at Huwara",
       description: "Long vehicle queues reported near the checkpoint.",
@@ -330,7 +357,7 @@ async function main() {
       closedAt: null,
     },
     create: {
-      id: "77777777-7777-7777-7777-777777777777",
+      id: INCIDENT_1_ID,
       title: "Heavy Traffic at Huwara",
       description: "Long vehicle queues reported near the checkpoint.",
       categoryId: delayCategory.id,
@@ -347,7 +374,7 @@ async function main() {
   });
 
   const incident2 = await prisma.incident.upsert({
-    where: { id: "88888888-8888-8888-8888-888888888888" },
+    where: { id: INCIDENT_2_ID },
     update: {
       title: "Minor Road Damage in Beit Furik",
       description: "Road surface damage causing slower movement.",
@@ -367,7 +394,7 @@ async function main() {
       closedAt: null,
     },
     create: {
-      id: "88888888-8888-8888-8888-888888888888",
+      id: INCIDENT_2_ID,
       title: "Minor Road Damage in Beit Furik",
       description: "Road surface damage causing slower movement.",
       categoryId: roadDamageCategory.id,
@@ -417,7 +444,7 @@ async function main() {
   // Citizen reports
   // =========================
   const report1 = await prisma.citizenReport.upsert({
-    where: { id: "99999999-9999-9999-9999-999999999999" },
+    where: { id: REPORT_1_ID },
     update: {
       userId: citizen1.id,
       categoryId: delayCategory.id,
@@ -431,7 +458,7 @@ async function main() {
       confidenceScore: new Prisma.Decimal("0.70"),
     },
     create: {
-      id: "99999999-9999-9999-9999-999999999999",
+      id: REPORT_1_ID,
       userId: citizen1.id,
       categoryId: delayCategory.id,
       description: "Traffic is very slow near Huwara checkpoint.",
@@ -445,7 +472,7 @@ async function main() {
   });
 
   const report2 = await prisma.citizenReport.upsert({
-    where: { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" },
+    where: { id: REPORT_2_ID },
     update: {
       userId: citizen2.id,
       categoryId: delayCategory.id,
@@ -459,7 +486,7 @@ async function main() {
       confidenceScore: new Prisma.Decimal("0.55"),
     },
     create: {
-      id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      id: REPORT_2_ID,
       userId: citizen2.id,
       categoryId: delayCategory.id,
       description: "Queue is getting longer in the same area.",
@@ -474,7 +501,7 @@ async function main() {
   });
 
   const report3 = await prisma.citizenReport.upsert({
-    where: { id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" },
+    where: { id: REPORT_3_ID },
     update: {
       userId: citizen3.id,
       categoryId: accidentCategory.id,
@@ -488,7 +515,7 @@ async function main() {
       confidenceScore: new Prisma.Decimal("0.88"),
     },
     create: {
-      id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      id: REPORT_3_ID,
       userId: citizen3.id,
       categoryId: accidentCategory.id,
       description: "Minor accident reported near city entrance.",
@@ -574,7 +601,7 @@ async function main() {
   // Alert subscriptions
   // =========================
   const sub1 = await prisma.alertSubscription.upsert({
-    where: { id: "cccccccc-cccc-cccc-cccc-cccccccccccc" },
+    where: { id: SUB_1_ID },
     update: {
       userId: citizen1.id,
       regionId: huwaraArea.id,
@@ -582,7 +609,7 @@ async function main() {
       isActive: true,
     },
     create: {
-      id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      id: SUB_1_ID,
       userId: citizen1.id,
       regionId: huwaraArea.id,
       categoryId: delayCategory.id,
@@ -591,7 +618,7 @@ async function main() {
   });
 
   const sub2 = await prisma.alertSubscription.upsert({
-    where: { id: "dddddddd-dddd-dddd-dddd-dddddddddddd" },
+    where: { id: SUB_2_ID },
     update: {
       userId: citizen2.id,
       regionId: beitFurik.id,
@@ -599,7 +626,7 @@ async function main() {
       isActive: true,
     },
     create: {
-      id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      id: SUB_2_ID,
       userId: citizen2.id,
       regionId: beitFurik.id,
       categoryId: roadDamageCategory.id,
@@ -613,10 +640,7 @@ async function main() {
   await prisma.alert.deleteMany({
     where: {
       id: {
-        in: [
-          "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
-          "ffffffff-ffff-ffff-ffff-ffffffffffff",
-        ],
+        in: [ALERT_1_ID, ALERT_2_ID],
       },
     },
   });
@@ -624,14 +648,14 @@ async function main() {
   await prisma.alert.createMany({
     data: [
       {
-        id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        id: ALERT_1_ID,
         incidentId: incident2.id,
         subscriptionId: sub2.id,
         alertMessage: "Verified road damage reported in Beit Furik.",
         deliveryStatus: "pending",
       },
       {
-        id: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        id: ALERT_2_ID,
         incidentId: incident1.id,
         subscriptionId: sub1.id,
         alertMessage: "Traffic delay reported in Huwara Area.",
@@ -644,7 +668,7 @@ async function main() {
   // Route
   // =========================
   await prisma.route.upsert({
-    where: { id: "12121212-1212-1212-1212-121212121212" },
+    where: { id: ROUTE_1_ID },
     update: {
       originName: "Nablus City Center",
       originLat: new Prisma.Decimal("32.221110"),
@@ -666,7 +690,7 @@ async function main() {
       createdByUserId: citizen1.id,
     },
     create: {
-      id: "12121212-1212-1212-1212-121212121212",
+      id: ROUTE_1_ID,
       originName: "Nablus City Center",
       originLat: new Prisma.Decimal("32.221110"),
       originLng: new Prisma.Decimal("35.254440"),
