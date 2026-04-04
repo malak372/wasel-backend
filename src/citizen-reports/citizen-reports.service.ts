@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -14,7 +15,6 @@ import { ApproveReportDto } from './dto/approve-report.dto';
 import { RejectReportDto } from './dto/reject-report.dto';
 import { MergeReportDto } from './dto/merge-report.dto';
 import { VoteReportDto } from './dto/vote-report.dto';
-
 @Injectable()
 export class CitizenReportsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -506,62 +506,88 @@ export class CitizenReportsService {
   }
 
   async vote(
-    id: string,
-    dto: VoteReportDto,
-    user: { userId: string; role: string },
-  ) {
-    const report = await this.prisma.citizenReport.findUnique({
-      where: { id },
-    });
+  id: string,
+  dto: VoteReportDto,
+  user: { userId: string; role: string },
+) {
+  const report = await this.prisma.citizenReport.findUnique({
+    where: { id },
+  });
 
-    if (!report) {
-      throw new NotFoundException('Report not found');
-    }
+  if (!report) {
+    throw new NotFoundException('Report not found');
+  }
 
-    if (report.userId === user.userId) {
-      throw new BadRequestException('You cannot vote on your own report');
-    }
+  if (report.userId === user.userId) {
+    throw new BadRequestException('You cannot vote on your own report');
+  }
 
-    await this.prisma.reportVote.upsert({
-      where: {
-        reportId_userId: {
-          reportId: id,
-          userId: user.userId,
-        },
-      },
-      update: {
-        voteType: dto.voteType as VoteType,
-      },
-      create: {
+  const existingVote = await this.prisma.reportVote.findUnique({
+    where: {
+      reportId_userId: {
         reportId: id,
         userId: user.userId,
-        voteType: dto.voteType as VoteType,
       },
-    });
+    },
+  });
 
-    const confidenceScore = await this.recalculateAndPersistConfidence(id);
-
-    const votes = await this.prisma.reportVote.groupBy({
-      by: ['voteType'],
-      where: { reportId: id },
-      _count: { voteType: true },
-    });
-
-    const confirmVotes =
-      votes.find((v) => v.voteType === 'confirm')?._count.voteType ?? 0;
-    const denyVotes =
-      votes.find((v) => v.voteType === 'deny')?._count.voteType ?? 0;
-
-    return {
-      message: 'Vote submitted successfully',
-      reportId: id,
-      votes: {
-        confirm: confirmVotes,
-        deny: denyVotes,
-      },
-      confidenceScore,
-    };
+  if (existingVote) {
+    throw new ConflictException('You have already voted on this report');
   }
+
+  await this.prisma.reportVote.create({
+    data: {
+      reportId: id,
+      userId: user.userId,
+      voteType: dto.voteType as VoteType,
+    },
+  });
+
+  const votes = await this.prisma.reportVote.groupBy({
+    by: ['voteType'],
+    where: { reportId: id },
+    _count: {
+      voteType: true,
+    },
+  });
+
+  const confirmVotes =
+    votes.find((v) => v.voteType === 'confirm')?._count.voteType ?? 0;
+
+  const denyVotes =
+    votes.find((v) => v.voteType === 'deny')?._count.voteType ?? 0;
+
+  let confidenceScore = 50;
+
+  confidenceScore += confirmVotes * 10;
+  confidenceScore -= denyVotes * 10;
+
+  if (report.status === 'approved') {
+    confidenceScore += 20;
+  } else if (report.status === 'pending') {
+    confidenceScore += 5;
+  }
+
+  if (confidenceScore < 0) confidenceScore = 0;
+  if (confidenceScore > 100) confidenceScore = 100;
+
+  await this.prisma.citizenReport.update({
+    where: { id },
+    data: {
+      confidenceScore,
+    },
+  });
+
+  return {
+    message: 'Vote submitted successfully',
+    reportId: id,
+    votes: {
+      confirm: confirmVotes,
+      deny: denyVotes,
+    },
+    confidenceScore,
+  };
+}
 
   private async findDuplicateCandidates(params: {
     categoryId: string;
