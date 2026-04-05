@@ -339,7 +339,7 @@ export class RoutesService {
 
     return {
       distanceKm: route.distance / 1000,
-      durationMin: route.duration / 60,
+      durationMin: Math.round(route.duration / 60),
     };
   }
 

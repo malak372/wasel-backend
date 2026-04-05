@@ -2,12 +2,12 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsDefined,
   IsLatitude,
   IsLongitude,
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -15,28 +15,32 @@ import { Type } from 'class-transformer';
 class RoutePointDto {
   @IsString()
   @IsNotEmpty()
-  name: string;
+  name!: string;
 
   @Type(() => Number)
   @IsLatitude()
-  lat: number;
+  lat!: number;
 
   @Type(() => Number)
   @IsLongitude()
-  lng: number;
+  lng!: number;
 }
 
 export class EstimateRouteDto {
+  @IsDefined()
   @ValidateNested()
   @Type(() => RoutePointDto)
-  origin: RoutePointDto;
+  origin!: RoutePointDto;
 
+  @IsDefined()
   @ValidateNested()
   @Type(() => RoutePointDto)
-  destination: RoutePointDto;
+  destination!: RoutePointDto;
 
+  @IsDefined()
+  @Type(() => Boolean)
   @IsBoolean()
-  avoidCheckpoints: boolean;
+  avoidCheckpoints!: boolean;
 
   @IsOptional()
   @IsArray()
