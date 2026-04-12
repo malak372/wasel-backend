@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  wasel-db:
+    image: postgres:15
+    container_name: wasel-postgres
+    
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: wasel_local_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  wasel-api:
+    build: .
+    container_name: wasel-backend
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - wasel-db
+
+volumes:
+  postgres_data:
