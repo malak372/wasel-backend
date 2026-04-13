@@ -9,6 +9,8 @@ import { RoutesModule } from './routes/routes.module';
 import { CheckpointsModule } from './checkpoints/checkpoints.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { CitizenReportsModule } from './citizen-reports/citizen-reports.module';
+import { AlertSubscriptionsModule } from './alert-subscriptions/alert-subscriptions.module';
+import { AlertsModule } from './alerts/alerts.module';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { CitizenReportsModule } from './citizen-reports/citizen-reports.module';
     CheckpointsModule,
     IncidentsModule,
     CitizenReportsModule,
+    AlertSubscriptionsModule,
+    AlertsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
