@@ -159,6 +159,7 @@ export class IncidentsController {
     @Body() dto: CreateIncidentDto,
     @CurrentUser() user: CurrentUserType,
   ) {
+    // Correctly using userId from CurrentUserType
     return this.incidentsService.create(dto, user.userId);
   }
 
@@ -210,6 +211,7 @@ export class IncidentsController {
     @Body() dto: VerifyIncidentDto,
     @CurrentUser() user: CurrentUserType,
   ) {
+    // Correctly passing user.userId to trigger notification logic in service
     return this.incidentsService.verify(id, dto, user.userId);
   }
 
