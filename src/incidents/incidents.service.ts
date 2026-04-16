@@ -15,10 +15,54 @@ import { CloseIncidentDto } from './dto/close-incident.dto';
 import { RejectIncidentDto } from './dto/reject-incident.dto';
 import { ListIncidentsQueryDto } from './dto/list-incidents-query.dto';
 
+/**
+ * IncidentsService
+ * ----------------
+ * Author: Eman
+ *
+ * This service contains the business logic for managing incidents
+ * in the application.
+ *
+ * It is responsible for:
+ * - Creating new incidents
+ * - Retrieving incidents with filtering, sorting, and pagination
+ * - Retrieving a single incident by ID
+ * - Updating incident details
+ * - Verifying incidents
+ * - Closing incidents
+ * - Rejecting incidents
+ * - Retrieving incident status history
+ *
+ * It also ensures:
+ * - Referenced categories, regions, and checkpoints exist
+ * - Incident status changes are recorded in status history
+ * - Proper validation rules are enforced before updating incident state
+ * - Exceptions are thrown when invalid operations occur
+ *
+ * Dependencies:
+ * - PrismaService: Used for database operations
+ * - Prisma Client types: Used for typed queries and decimal conversion
+ */
 @Injectable()
 export class IncidentsService {
+  /**
+   * Constructor
+   * -----------
+   * Injects PrismaService to interact with the database.
+   *
+   * @param prisma - Prisma service used for database access
+   */
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * ensureCategoryExists
+   * --------------------
+   * Verifies that the provided incident category exists.
+   *
+   * @param categoryId - Unique identifier of the incident category
+   * @returns The category object if found
+   * @throws BadRequestException if the category does not exist
+   */
   private async ensureCategoryExists(categoryId: string) {
     const category = await this.prisma.incidentCategory.findUnique({
       where: { id: categoryId },
@@ -31,6 +75,15 @@ export class IncidentsService {
     return category;
   }
 
+  /**
+   * ensureRegionExists
+   * ------------------
+   * Verifies that the provided region exists.
+   *
+   * @param regionId - Unique identifier of the region
+   * @returns The region object if found
+   * @throws BadRequestException if the region does not exist
+   */
   private async ensureRegionExists(regionId: string) {
     const region = await this.prisma.region.findUnique({
       where: { id: regionId },
@@ -43,6 +96,15 @@ export class IncidentsService {
     return region;
   }
 
+  /**
+   * ensureCheckpointExists
+   * ----------------------
+   * Verifies that the provided checkpoint exists.
+   *
+   * @param checkpointId - Unique identifier of the checkpoint
+   * @returns The checkpoint object if found
+   * @throws BadRequestException if the checkpoint does not exist
+   */
   private async ensureCheckpointExists(checkpointId: string) {
     const checkpoint = await this.prisma.checkpoint.findUnique({
       where: { id: checkpointId },
@@ -55,6 +117,59 @@ export class IncidentsService {
     return checkpoint;
   }
 
+  /**
+   * appendStatusHistory
+   * -------------------
+   * Creates a new incident status history record.
+   *
+   * This helper method centralizes history creation
+   * to reduce duplicated code during status transitions.
+   *
+   * @param tx - Prisma transaction client
+   * @param params - Status history data
+   * @param params.incidentId - Unique identifier of the incident
+   * @param params.oldStatus - Previous incident status
+   * @param params.newStatus - New incident status
+   * @param params.changedByUserId - User who changed the status
+   * @param params.reason - Optional reason for the status change
+   * @returns The created incident status history record
+   */
+  private async appendStatusHistory(
+    tx: Prisma.TransactionClient,
+    params: {
+      incidentId: string;
+      oldStatus: IncidentStatus;
+      newStatus: IncidentStatus;
+      changedByUserId?: string | null;
+      reason?: string;
+    },
+  ) {
+    return tx.incidentStatusHistory.create({
+      data: {
+        incidentId: params.incidentId,
+        oldStatus: params.oldStatus,
+        newStatus: params.newStatus,
+        changedByUserId: params.changedByUserId ?? null,
+        reason: params.reason,
+      },
+    });
+  }
+
+  /**
+   * findOne
+   * -------
+   * Retrieves a single incident by its unique identifier.
+   *
+   * Includes related entities such as:
+   * - category
+   * - region
+   * - checkpoint
+   * - reporting, verifying, and closing users
+   *
+   * @param id - Unique identifier of the incident
+   * @returns The incident with related data
+   * @throws NotFoundException if the incident does not exist
+   */
   async findOne(id: string) {
     const incident = await this.prisma.incident.findUnique({
       where: { id },
@@ -81,6 +196,27 @@ export class IncidentsService {
     return incident;
   }
 
+  /**
+   * create
+   * ------
+   * Creates a new incident in the database.
+   *
+   * Process:
+   * 1. Ensures referenced category exists
+   * 2. Ensures referenced region exists if provided
+   * 3. Ensures referenced checkpoint exists if provided
+   * 4. Creates the incident
+   * 5. Adds an initial status history record
+   *
+   * The initial status is always set to "open".
+   *
+   * A database transaction is used to ensure
+   * both incident creation and history creation succeed together.
+   *
+   * @param dto - Data required to create a new incident
+   * @param currentUserId - ID of the authenticated user creating the incident
+   * @returns The created incident with related category, region, and checkpoint
+   */
   async create(dto: CreateIncidentDto, currentUserId: string) {
     await this.ensureCategoryExists(dto.categoryId);
 
@@ -103,7 +239,9 @@ export class IncidentsService {
           checkpointId: dto.checkpointId,
           regionId: dto.regionId,
           latitude:
-            dto.latitude !== undefined ? new Prisma.Decimal(dto.latitude) : undefined,
+            dto.latitude !== undefined
+              ? new Prisma.Decimal(dto.latitude)
+              : undefined,
           longitude:
             dto.longitude !== undefined
               ? new Prisma.Decimal(dto.longitude)
@@ -119,14 +257,12 @@ export class IncidentsService {
         },
       });
 
-      await tx.incidentStatusHistory.create({
-        data: {
-          incidentId: created.id,
-          oldStatus: IncidentStatus.open,
-          newStatus: IncidentStatus.open,
-          changedByUserId: currentUserId,
-          reason: 'Initial status on creation',
-        },
+      await this.appendStatusHistory(tx, {
+        incidentId: created.id,
+        oldStatus: IncidentStatus.open,
+        newStatus: IncidentStatus.open,
+        changedByUserId: currentUserId,
+        reason: 'Initial status on creation',
       });
 
       return created;
@@ -137,6 +273,27 @@ export class IncidentsService {
     return incident;
   }
 
+  /**
+   * findAll
+   * -------
+   * Retrieves a paginated list of incidents.
+   *
+   * Supports:
+   * - Filtering by status
+   * - Filtering by severity
+   * - Filtering by category
+   * - Filtering by region
+   * - Filtering by checkpoint
+   * - Filtering by source type
+   * - Filtering by occurredAt date range
+   * - Sorting by a selected field
+   * - Pagination using page and limit
+   *
+   * @param query - Query parameters for filtering, sorting, and pagination
+   * @returns An object containing:
+   * - data: list of incidents
+   * - meta: pagination information
+   */
   async findAll(query: ListIncidentsQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -200,6 +357,32 @@ export class IncidentsService {
     };
   }
 
+  /**
+   * update
+   * ------
+   * Updates the general details of an existing incident.
+   *
+   * This may include:
+   * - title
+   * - description
+   * - category
+   * - severity
+   * - sourceType
+   * - region
+   * - checkpoint
+   * - latitude
+   * - longitude
+   * - occurredAt
+   *
+   * If category, region, or checkpoint IDs are provided,
+   * the method validates their existence before updating.
+   *
+   * @param id - Unique identifier of the incident
+   * @param dto - Updated incident fields
+   * @returns The updated incident with category, region, and checkpoint
+   * @throws NotFoundException if the incident does not exist
+   * @throws BadRequestException if referenced relations do not exist
+   */
   async update(id: string, dto: UpdateIncidentDto) {
     await this.findOne(id);
 
@@ -219,16 +402,26 @@ export class IncidentsService {
 
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.description !== undefined) data.description = dto.description;
-    if (dto.categoryId !== undefined) data.category = { connect: { id: dto.categoryId } };
+    if (dto.categoryId !== undefined) {
+      data.category = { connect: { id: dto.categoryId } };
+    }
     if (dto.severity !== undefined) data.severity = dto.severity;
     if (dto.sourceType !== undefined) data.sourceType = dto.sourceType;
-    if (dto.regionId !== undefined) data.region = { connect: { id: dto.regionId } };
+    if (dto.regionId !== undefined) {
+      data.region = { connect: { id: dto.regionId } };
+    }
     if (dto.checkpointId !== undefined) {
       data.checkpoint = { connect: { id: dto.checkpointId } };
     }
-    if (dto.latitude !== undefined) data.latitude = new Prisma.Decimal(dto.latitude);
-    if (dto.longitude !== undefined) data.longitude = new Prisma.Decimal(dto.longitude);
-    if (dto.occurredAt !== undefined) data.occurredAt = new Date(dto.occurredAt);
+    if (dto.latitude !== undefined) {
+      data.latitude = new Prisma.Decimal(dto.latitude);
+    }
+    if (dto.longitude !== undefined) {
+      data.longitude = new Prisma.Decimal(dto.longitude);
+    }
+    if (dto.occurredAt !== undefined) {
+      data.occurredAt = new Date(dto.occurredAt);
+    }
 
     return this.prisma.incident.update({
       where: { id },
@@ -241,6 +434,26 @@ export class IncidentsService {
     });
   }
 
+  /**
+   * verify
+   * ------
+   * Marks an incident as verified.
+   *
+   * Only incidents with status "open" can be verified.
+   *
+   * Process:
+   * 1. Ensures the incident exists
+   * 2. Ensures the incident is currently open
+   * 3. Updates the incident status to verified
+   * 4. Stores verifier user and verification timestamp
+   * 5. Adds a status history record
+   *
+   * @param id - Unique identifier of the incident
+   * @param dto - Verification data including optional reason
+   * @param currentUserId - ID of the authenticated user verifying the incident
+   * @returns The updated incident
+   * @throws BadRequestException if the incident is not open
+   */
   async verify(id: string, dto: VerifyIncidentDto, currentUserId: string) {
     const incident = await this.findOne(id);
 
@@ -263,14 +476,12 @@ export class IncidentsService {
         },
       });
 
-      await tx.incidentStatusHistory.create({
-        data: {
-          incidentId: id,
-          oldStatus: incident.status,
-          newStatus: IncidentStatus.verified,
-          changedByUserId: currentUserId,
-          reason: dto.reason,
-        },
+      await this.appendStatusHistory(tx, {
+        incidentId: id,
+        oldStatus: incident.status,
+        newStatus: IncidentStatus.verified,
+        changedByUserId: currentUserId,
+        reason: dto.reason,
       });
 
       return updated;
@@ -281,6 +492,27 @@ export class IncidentsService {
     return verifiedIncident;
   }
 
+  /**
+   * close
+   * -----
+   * Marks an incident as closed.
+   *
+   * Only incidents with status "open" or "verified"
+   * can be closed.
+   *
+   * Process:
+   * 1. Ensures the incident exists
+   * 2. Ensures its current status is allowed for closing
+   * 3. Updates the incident status to closed
+   * 4. Stores closer user and closing timestamp
+   * 5. Adds a status history record
+   *
+   * @param id - Unique identifier of the incident
+   * @param dto - Closing data including optional reason
+   * @param currentUserId - ID of the authenticated user closing the incident
+   * @returns The updated incident
+   * @throws BadRequestException if the incident cannot be closed
+   */
   async close(id: string, dto: CloseIncidentDto, currentUserId: string) {
     const incident = await this.findOne(id);
 
@@ -308,20 +540,39 @@ export class IncidentsService {
         },
       });
 
-      await tx.incidentStatusHistory.create({
-        data: {
-          incidentId: id,
-          oldStatus: incident.status,
-          newStatus: IncidentStatus.closed,
-          changedByUserId: currentUserId,
-          reason: dto.reason,
-        },
+      await this.appendStatusHistory(tx, {
+        incidentId: id,
+        oldStatus: incident.status,
+        newStatus: IncidentStatus.closed,
+        changedByUserId: currentUserId,
+        reason: dto.reason,
       });
 
       return updated;
     });
   }
 
+  /**
+   * reject
+   * ------
+   * Marks an incident as rejected.
+   *
+   * Rules:
+   * - Closed incidents cannot be rejected
+   * - Already rejected incidents cannot be rejected again
+   *
+   * Process:
+   * 1. Ensures the incident exists
+   * 2. Validates that rejection is allowed
+   * 3. Updates the incident status to rejected
+   * 4. Adds a status history record
+   *
+   * @param id - Unique identifier of the incident
+   * @param dto - Rejection data including optional reason
+   * @param currentUserId - ID of the authenticated user rejecting the incident
+   * @returns The updated incident
+   * @throws BadRequestException if rejection is not allowed
+   */
   async reject(id: string, dto: RejectIncidentDto, currentUserId: string) {
     const incident = await this.findOne(id);
 
@@ -346,20 +597,32 @@ export class IncidentsService {
         },
       });
 
-      await tx.incidentStatusHistory.create({
-        data: {
-          incidentId: id,
-          oldStatus: incident.status,
-          newStatus: IncidentStatus.rejected,
-          changedByUserId: currentUserId,
-          reason: dto.reason,
-        },
+      await this.appendStatusHistory(tx, {
+        incidentId: id,
+        oldStatus: incident.status,
+        newStatus: IncidentStatus.rejected,
+        changedByUserId: currentUserId,
+        reason: dto.reason,
       });
 
       return updated;
     });
   }
 
+  /**
+   * getStatusHistory
+   * ----------------
+   * Retrieves the status history of a specific incident.
+   *
+   * The results are ordered by most recent change first.
+   *
+   * It also includes selected details about
+   * the user who performed each status change.
+   *
+   * @param id - Unique identifier of the incident
+   * @returns A list of incident status history records
+   * @throws NotFoundException if the incident does not exist
+   */
   async getStatusHistory(id: string) {
     await this.findOne(id);
 
