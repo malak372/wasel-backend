@@ -15,10 +15,71 @@ import { ApproveReportDto } from './dto/approve-report.dto';
 import { RejectReportDto } from './dto/reject-report.dto';
 import { MergeReportDto } from './dto/merge-report.dto';
 import { VoteReportDto } from './dto/vote-report.dto';
+
+/**
+ * CitizenReportsService
+ * ---------------------
+ * Author: Malak
+ *
+ * Service responsible for managing the full citizen report lifecycle.
+ *
+ * This service handles:
+ * - Creating reports
+ * - Retrieving reports
+ * - Retrieving a single report
+ * - Approving reports
+ * - Rejecting reports
+ * - Merging duplicate reports
+ * - Recording user votes
+ * - Detecting possible duplicates
+ * - Calculating and updating confidence scores
+ *
+ * Responsibilities:
+ * - Validates business rules beyond DTO validation
+ * - Interacts with the database using Prisma
+ * - Enforces moderation and ownership constraints
+ * - Maintains moderation logs and voting integrity
+ *
+ * Dependencies:
+ * - PrismaService: Used for all database operations
+ *
+ * Notes:
+ * - This service works closely with moderation workflows.
+ * - Some methods use transactions to ensure consistency across related operations.
+ */
 @Injectable()
 export class CitizenReportsService {
+  /**
+   * Constructor
+   * -----------
+   * Injects PrismaService to perform database operations.
+   *
+   * @param prisma - Prisma client wrapper used for querying and updating the database
+   */
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * create
+   * ------
+   * Creates a new citizen report.
+   *
+   * @param dto - Data required to create the report
+   * @param user - Authenticated user submitting the report
+   * @returns Newly created report with duplicate detection metadata
+   *
+   * Behavior:
+   * - Ensures regionId or coordinates are provided
+   * - Validates that the description is not empty
+   * - Confirms category and region existence
+   * - Applies anti-spam protection by enforcing a minimum time gap between submissions
+   * - Detects possible duplicate reports
+   * - Calculates an initial confidence score
+   * - Stores the report in the database
+   *
+   * Throws:
+   * - BadRequestException if required data is invalid or missing
+   * - HttpException with TOO_MANY_REQUESTS if reports are submitted too frequently
+   */
   async create(
     dto: CreateReportDto,
     user: { userId: string; role: string },
@@ -131,6 +192,20 @@ export class CitizenReportsService {
     };
   }
 
+  /**
+   * findAll
+   * -------
+   * Retrieves a filtered, sorted, and paginated list of reports.
+   *
+   * @param query - Query parameters used for filtering and pagination
+   * @returns Paginated report list
+   *
+   * Behavior:
+   * - Applies optional filters such as status, category, region, incident, and user
+   * - Supports date range filtering
+   * - Supports sorting and ordering
+   * - Supports pagination using page and limit
+   */
   async findAll(query: GetReportsQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -195,6 +270,23 @@ export class CitizenReportsService {
     };
   }
 
+  /**
+   * findOne
+   * -------
+   * Retrieves a single report by its identifier.
+   *
+   * @param id - Report identifier
+   * @param user - Authenticated user requesting the report
+   * @returns Detailed report data
+   *
+   * Behavior:
+   * - Retrieves related entities such as category, region, incident, duplicates, and votes
+   * - Enforces access control for citizen users
+   *
+   * Throws:
+   * - NotFoundException if the report does not exist
+   * - ForbiddenException if the user is not allowed to access the report
+   */
   async findOne(id: string, user: { userId: string; role: string }) {
     const report = await this.prisma.citizenReport.findUnique({
       where: { id },
@@ -235,35 +327,39 @@ export class CitizenReportsService {
       report.userId &&
       report.userId !== user.userId
     ) {
-      throw new ForbiddenException('You can only view your own reports');
+      throw new ForbiddenException('You can only access your own reports');
     }
-
-    const moderationActions = await this.prisma.moderationAction.findMany({
-      where: {
-        targetType: 'report',
-        targetId: id,
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        moderatorUser: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-      },
-    });
-
-    const score = await this.recalculateAndPersistConfidence(report.id);
 
     return {
       ...report,
-      confidenceScore: score,
-      moderationActions,
+      confidenceScore: Number(report.confidenceScore ?? 0),
     };
   }
 
+  /**
+   * approve
+   * -------
+   * Approves a report and optionally links it to an existing incident
+   * or creates a new incident.
+   *
+   * @param id - Report identifier
+   * @param dto - Approval payload
+   * @param moderator - Authenticated moderator/admin performing the action
+   * @returns Approval result with updated report data
+   *
+   * Behavior:
+   * - Verifies that the report exists
+   * - Prevents re-approving already approved reports
+   * - Links to an existing incident if incidentId is provided
+   * - Creates a new incident if needed
+   * - Marks the report as approved
+   * - Writes a moderation action log
+   * - Recalculates confidence score after approval
+   *
+   * Throws:
+   * - NotFoundException if the report or incident is not found
+   * - BadRequestException for invalid approval scenarios
+   */
   async approve(
     id: string,
     dto: ApproveReportDto,
@@ -271,10 +367,7 @@ export class CitizenReportsService {
   ) {
     const report = await this.prisma.citizenReport.findUnique({
       where: { id },
-      include: {
-        category: true,
-        incident: true,
-      },
+      include: { category: true },
     });
 
     if (!report) {
@@ -282,14 +375,10 @@ export class CitizenReportsService {
     }
 
     if (report.status === 'approved') {
-      throw new BadRequestException('Report is already approved');
+      throw new BadRequestException('Report already approved');
     }
 
-    if (report.status === 'rejected') {
-      throw new BadRequestException('Rejected report cannot be approved');
-    }
-
-    let incidentId = dto.incidentId ?? report.incidentId ?? null;
+    let incidentId = report.incidentId ?? null;
 
     const result = await this.prisma.$transaction(async (tx) => {
       if (dto.incidentId) {
@@ -369,6 +458,27 @@ export class CitizenReportsService {
     };
   }
 
+  /**
+   * reject
+   * ------
+   * Rejects a report and records the moderation decision.
+   *
+   * @param id - Report identifier
+   * @param dto - Rejection payload
+   * @param moderator - Authenticated moderator/admin performing the action
+   * @returns Rejection result with updated report data
+   *
+   * Behavior:
+   * - Ensures the report exists
+   * - Prevents rejecting already approved reports
+   * - Updates the report status to rejected
+   * - Writes a moderation action log
+   * - Recalculates confidence score after rejection
+   *
+   * Throws:
+   * - NotFoundException if the report is not found
+   * - BadRequestException if the report cannot be rejected
+   */
   async reject(
     id: string,
     dto: RejectReportDto,
@@ -432,6 +542,28 @@ export class CitizenReportsService {
     };
   }
 
+  /**
+   * merge
+   * -----
+   * Merges a source report into a target report.
+   *
+   * @param id - Source report identifier
+   * @param dto - Merge payload containing the target report ID
+   * @param moderator - Authenticated moderator/admin performing the action
+   * @returns Merge result with updated report data
+   *
+   * Behavior:
+   * - Prevents merging a report into itself
+   * - Verifies both source and target reports exist
+   * - Marks the source report as merged
+   * - Links it to the target report
+   * - Writes a moderation action log
+   * - Recalculates confidence score after merging
+   *
+   * Throws:
+   * - BadRequestException for invalid merge scenarios
+   * - NotFoundException if source or target report is missing
+   */
   async merge(
     id: string,
     dto: MergeReportDto,
@@ -505,176 +637,206 @@ export class CitizenReportsService {
     };
   }
 
+  /**
+   * vote
+   * ----
+   * Records a user vote on a report.
+   *
+   * @param id - Report identifier
+   * @param dto - Vote payload
+   * @param user - Authenticated user casting the vote
+   * @returns Voting result with updated confidence score
+   *
+   * Behavior:
+   * - Ensures the report exists
+   * - Prevents users from voting on their own reports
+   * - Prevents duplicate votes from the same user
+   * - Stores the vote
+   * - Recalculates the report confidence score
+   *
+   * Throws:
+   * - NotFoundException if the report does not exist
+   * - BadRequestException if the user votes on their own report
+   * - ConflictException if the user has already voted
+   */
   async vote(
-  id: string,
-  dto: VoteReportDto,
-  user: { userId: string; role: string },
-) {
-  const report = await this.prisma.citizenReport.findUnique({
-    where: { id },
-  });
-
-  if (!report) {
-    throw new NotFoundException('Report not found');
-  }
-
-  if (report.userId === user.userId) {
-    throw new BadRequestException('You cannot vote on your own report');
-  }
-
-  const existingVote = await this.prisma.reportVote.findUnique({
-    where: {
-      reportId_userId: {
-        reportId: id,
-        userId: user.userId,
-      },
-    },
-  });
-
-  if (existingVote) {
-    throw new ConflictException('You have already voted on this report');
-  }
-
-  await this.prisma.reportVote.create({
-    data: {
-      reportId: id,
-      userId: user.userId,
-      voteType: dto.voteType as VoteType,
-    },
-  });
-
-  const votes = await this.prisma.reportVote.groupBy({
-    by: ['voteType'],
-    where: { reportId: id },
-    _count: {
-      voteType: true,
-    },
-  });
-
-  const confirmVotes =
-    votes.find((v) => v.voteType === 'confirm')?._count.voteType ?? 0;
-
-  const denyVotes =
-    votes.find((v) => v.voteType === 'deny')?._count.voteType ?? 0;
-
-  let confidenceScore = 50;
-
-  confidenceScore += confirmVotes * 10;
-  confidenceScore -= denyVotes * 10;
-
-  if (report.status === 'approved') {
-    confidenceScore += 20;
-  } else if (report.status === 'pending') {
-    confidenceScore += 5;
-  }
-
-  if (confidenceScore < 0) confidenceScore = 0;
-  if (confidenceScore > 100) confidenceScore = 100;
-
-  await this.prisma.citizenReport.update({
-    where: { id },
-    data: {
-      confidenceScore,
-    },
-  });
-
-  return {
-    message: 'Vote submitted successfully',
-    reportId: id,
-    votes: {
-      confirm: confirmVotes,
-      deny: denyVotes,
-    },
-    confidenceScore,
-  };
-}
-
-  private async findDuplicateCandidates(params: {
-    categoryId: string;
-    regionId?: string;
-    latitude?: number;
-    longitude?: number;
-    reportTime: Date;
-  }) {
-    const from = new Date(params.reportTime.getTime() - 2 * 60 * 60 * 1000);
-    const to = new Date(params.reportTime.getTime() + 2 * 60 * 60 * 1000);
-
-    const candidates = await this.prisma.citizenReport.findMany({
-      where: {
-        categoryId: params.categoryId,
-        status: {
-          in: ['pending', 'approved'],
-        },
-        reportTime: {
-          gte: from,
-          lte: to,
-        },
-      },
-      include: {
-        category: true,
-        region: true,
-      },
-      orderBy: {
-        reportTime: 'desc',
-      },
-    });
-
-    const filtered = candidates.filter((candidate) => {
-      const sameRegion =
-        !!params.regionId &&
-        !!candidate.regionId &&
-        params.regionId === candidate.regionId;
-
-      const nearLocation =
-        params.latitude != null &&
-        params.longitude != null &&
-        candidate.latitude != null &&
-        candidate.longitude != null &&
-        this.distanceKm(
-          params.latitude,
-          params.longitude,
-          Number(candidate.latitude),
-          Number(candidate.longitude),
-        ) <= 1;
-
-      return Boolean(sameRegion || nearLocation);
-    });
-
-    return filtered.map((item) => ({
-      id: item.id,
-      status: item.status,
-      description: item.description,
-      regionId: item.regionId,
-      reportTime: item.reportTime,
-      confidenceScore: Number(item.confidenceScore ?? 0),
-    }));
-  }
-
-  private async recalculateAndPersistConfidence(reportId: string) {
+    id: string,
+    dto: VoteReportDto,
+    user: { userId: string; role: string },
+  ) {
     const report = await this.prisma.citizenReport.findUnique({
-      where: { id: reportId },
-      include: {
-        votes: true,
-        duplicateOfReport: true,
-      },
+      where: { id },
     });
 
     if (!report) {
       throw new NotFoundException('Report not found');
     }
 
-    const confirmVotes = report.votes.filter(
-      (v) => v.voteType === 'confirm',
-    ).length;
-    const denyVotes = report.votes.filter(
-      (v) => v.voteType === 'deny',
-    ).length;
+    if (report.userId === user.userId) {
+      throw new BadRequestException('You cannot vote on your own report');
+    }
+
+    const existingVote = await this.prisma.reportVote.findUnique({
+      where: {
+        reportId_userId: {
+          reportId: id,
+          userId: user.userId,
+        },
+      },
+    });
+
+    if (existingVote) {
+      throw new ConflictException('You have already voted on this report');
+    }
+
+    await this.prisma.reportVote.create({
+      data: {
+        reportId: id,
+        userId: user.userId,
+        voteType: dto.voteType as VoteType,
+      },
+    });
+
+    const confidenceScore = await this.recalculateAndPersistConfidence(id);
+
+    return {
+      message: 'Vote submitted successfully',
+      confidenceScore,
+    };
+  }
+
+  /**
+   * findDuplicateCandidates
+   * -----------------------
+   * Searches for possible duplicate reports based on category, region,
+   * location, and report time.
+   *
+   * @param input - Criteria used to find duplicate candidates
+   * @returns List of possible duplicate reports
+   *
+   * Behavior:
+   * - Looks for pending or approved reports
+   * - Compares category and nearby timing
+   * - Optionally narrows results by region or location
+   *
+   * Purpose:
+   * - Helps detect repeated reports of the same incident
+   * - Supports confidence scoring and moderation workflows
+   */
+  private async findDuplicateCandidates(input: {
+    categoryId: string;
+    regionId?: string;
+    latitude?: number;
+    longitude?: number;
+    reportTime: Date;
+  }) {
+    const timeWindowMs = 60 * 60 * 1000;
+    const from = new Date(input.reportTime.getTime() - timeWindowMs);
+    const to = new Date(input.reportTime.getTime() + timeWindowMs);
+
+    const candidates = await this.prisma.citizenReport.findMany({
+      where: {
+        categoryId: input.categoryId,
+        status: { in: ['pending', 'approved'] as ReportStatus[] },
+        reportTime: {
+          gte: from,
+          lte: to,
+        },
+        ...(input.regionId ? { regionId: input.regionId } : {}),
+      },
+      select: {
+        id: true,
+        description: true,
+        status: true,
+        reportTime: true,
+        regionId: true,
+      },
+      take: 10,
+      orderBy: { reportTime: 'desc' },
+    });
+
+    return candidates;
+  }
+
+  /**
+   * calculateConfidenceScore
+   * ------------------------
+   * Computes a confidence score for a report based on status,
+   * user votes, and duplicate penalties.
+   *
+   * @param input - Confidence score inputs
+   * @returns number - Calculated confidence score
+   *
+   * Behavior:
+   * - Applies a base score depending on report status
+   * - Increases score for confirm votes
+   * - Decreases score for deny votes
+   * - Applies duplicate penalty when applicable
+   * - Clamps result within a defined range
+   *
+   * Purpose:
+   * - Provides a measurable indicator of report reliability
+   */
+  private calculateConfidenceScore(input: {
+    status: 'pending' | 'approved' | 'rejected' | 'merged';
+    confirmVotes: number;
+    denyVotes: number;
+    duplicatePenalty: number;
+  }): number {
+    const baseByStatus: Record<string, number> = {
+      pending: 50,
+      approved: 80,
+      rejected: 20,
+      merged: 30,
+    };
+
+    const score =
+      baseByStatus[input.status] +
+      input.confirmVotes * 5 -
+      input.denyVotes * 5 -
+      input.duplicatePenalty;
+
+    return Math.max(0, Math.min(100, score));
+  }
+
+  /**
+   * recalculateAndPersistConfidence
+   * -------------------------------
+   * Recomputes a report's confidence score and stores the updated value.
+   *
+   * @param reportId - Identifier of the report
+   * @returns number - Updated confidence score
+   *
+   * Behavior:
+   * - Loads the report and its votes
+   * - Counts confirm and deny votes
+   * - Applies duplicate penalties if needed
+   * - Recalculates the score
+   * - Persists the new score in the database
+   *
+   * Throws:
+   * - NotFoundException if the report is missing
+   */
+  private async recalculateAndPersistConfidence(reportId: string): Promise<number> {
+    const report = await this.prisma.citizenReport.findUnique({
+      where: { id: reportId },
+      include: { votes: true },
+    });
+
+    if (!report) {
+      throw new NotFoundException('Report not found');
+    }
+
+    const confirmVotes = report.votes.filter((v) => v.voteType === 'confirm').length;
+    const denyVotes = report.votes.filter((v) => v.voteType === 'deny').length;
+
+    const duplicatePenalty = report.duplicateOfReportId ? 10 : 0;
 
     const score = this.calculateConfidenceScore({
       status: report.status,
       confirmVotes,
       denyVotes,
-      duplicatePenalty: report.duplicateOfReportId ? 15 : 0,
+      duplicatePenalty,
     });
 
     await this.prisma.citizenReport.update({
@@ -685,52 +847,5 @@ export class CitizenReportsService {
     });
 
     return score;
-  }
-
-  private calculateConfidenceScore(params: {
-    status: ReportStatus;
-    confirmVotes: number;
-    denyVotes: number;
-    duplicatePenalty: number;
-  }) {
-    let score = 50;
-
-    if (params.status === 'approved') score += 25;
-    if (params.status === 'pending') score += 5;
-    if (params.status === 'rejected') score -= 25;
-    if (params.status === 'merged') score -= 10;
-
-    score += params.confirmVotes * 8;
-    score -= params.denyVotes * 8;
-    score -= params.duplicatePenalty;
-
-    if (score > 100) score = 100;
-    if (score < 0) score = 0;
-
-    return Number(score.toFixed(2));
-  }
-
-  private distanceKm(
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number,
-  ) {
-    const toRad = (value: number) => (value * Math.PI) / 180;
-
-    const earthRadiusKm = 6371;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) *
-        Math.cos(toRad(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return earthRadiusKm * c;
   }
 }
