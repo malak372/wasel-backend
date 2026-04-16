@@ -268,6 +268,8 @@ export class IncidentsService {
       return created;
     });
 
+    await this.notifySubscribers(incident.id);
+
     return incident;
   }
 
@@ -459,7 +461,7 @@ export class IncidentsService {
       throw new BadRequestException('Only open incidents can be verified');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const verifiedIncident = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.incident.update({
         where: { id },
         data: {
@@ -484,6 +486,10 @@ export class IncidentsService {
 
       return updated;
     });
+
+    await this.notifySubscribers(verifiedIncident.id);
+
+    return verifiedIncident;
   }
 
   /**
@@ -633,6 +639,39 @@ export class IncidentsService {
           },
         },
       },
+    });
+  }
+
+  async notifySubscribers(incidentId: string) {
+    const incident = await this.prisma.incident.findUnique({
+      where: { id: incidentId }
+    });
+
+    if (!incident) return;
+
+    const subscriptions = await this.prisma.alertSubscription.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { regionId: incident.regionId, categoryId: incident.categoryId },
+          { regionId: incident.regionId, categoryId: null },
+          { regionId: null, categoryId: incident.categoryId }
+        ]
+      }
+    });
+
+    if (subscriptions.length === 0) return;
+
+   const alertsToCreate = subscriptions.map(sub => ({
+      subscriptionId: sub.id,
+      incidentId: incident.id,
+      alertMessage: `New incident reported: ${incident.title}`,
+      deliveryStatus: 'pending' as any 
+    }));
+
+    await this.prisma.alert.createMany({
+      data: alertsToCreate,
+      skipDuplicates: true
     });
   }
 }

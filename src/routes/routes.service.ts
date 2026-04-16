@@ -2,18 +2,15 @@ import {
   BadGatewayException,
   Injectable,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstimateRouteDto } from './dto/estimate-route.dto';
 import { GetRoutesQueryDto } from './dto/get-routes-query.dto';
-import { firstValueFrom } from 'rxjs';
-import {
-  CheckpointStatus,
-  IncidentStatus,
-  Prisma,
-} from '@prisma/client';
+import { firstValueFrom, timeout, retry, catchError, of } from 'rxjs';
+import { CheckpointStatus, IncidentStatus, Prisma } from '@prisma/client';
 
 type CurrentUserType = {
   userId: string;
@@ -23,6 +20,11 @@ type CurrentUserType = {
 
 @Injectable()
 export class RoutesService {
+  private readonly logger = new Logger(RoutesService.name);
+  
+  // نظام Caching بسيط للطقس (يحفظ الحالة لمدة 10 دقائق لتخفيف الطلبات)
+  private weatherCache = new Map<string, { data: any; expiry: number }>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
@@ -45,11 +47,15 @@ export class RoutesService {
     });
 
     try {
+      // 1. جلب المسار من OSRM
       const routingResult = await this.callRoutingProvider(
         provider,
         osrmBaseUrl,
         dto,
       );
+
+      // 2. جلب حالة الطقس في منطقة الوصول
+      const weatherData = await this.getWeather(dto.destination.lat, dto.destination.lng);
 
       const minLat = Math.min(dto.origin.lat, dto.destination.lat) - 0.1;
       const maxLat = Math.max(dto.origin.lat, dto.destination.lat) + 0.1;
@@ -95,7 +101,6 @@ export class RoutesService {
       });
 
       const matchedAvoidRegions = await this.resolveAvoidAreas(dto.avoidAreas);
-
       const matchedAvoidRegionIds = new Set(matchedAvoidRegions.map((r) => r.id));
 
       const checkpointsInAvoidAreas = nearbyCheckpoints.filter(
@@ -111,6 +116,12 @@ export class RoutesService {
       let adjustedDurationMin = routingResult.durationMin;
 
       const notes: string[] = [];
+
+      // منطق الطقس المضاف: زيادة وقت الرحلة في حال وجود أمطار أو ثلوج
+      if (weatherData && ['Rain', 'Snow', 'Thunderstorm'].includes(weatherData.main)) {
+        adjustedDurationMin += 15;
+        notes.push(`Weather Condition (${weatherData.main}): Expected delays due to bad weather. Added 15 mins.`);
+      }
 
       if (dto.avoidCheckpoints && nearbyCheckpoints.length > 0) {
         adjustedDurationMin += nearbyCheckpoints.length * 7;
@@ -144,7 +155,7 @@ export class RoutesService {
         avoidAreasMatchedCount: matchedAvoidRegions.length,
         checkpointsInsideAvoidAreasCount: checkpointsInAvoidAreas.length,
         incidentsInsideAvoidAreasCount: incidentsInAvoidAreas.length,
-        weatherConsidered: false,
+        weatherConsidered: !!weatherData,
         notes,
       };
 
@@ -177,16 +188,15 @@ export class RoutesService {
         },
       });
 
-      await this.prisma.externalApiLog.create({
-        data: {
-          providerName: provider,
-          endpoint: 'route-estimate',
-          requestSummary,
-          responseStatus: 200,
-          responseTimeMs: Date.now() - startedAt,
-          cached: false,
-        },
-      });
+      // Log OSRM Success
+      await this.logExternalApi(
+        provider,
+        'route-estimate',
+        requestSummary,
+        200,
+        Date.now() - startedAt,
+        false
+      );
 
       return {
         id: createdRoute.id,
@@ -194,6 +204,7 @@ export class RoutesService {
         destination: dto.destination,
         estimatedDistanceKm: Number(adjustedDistanceKm.toFixed(2)),
         estimatedDurationMin: Math.round(adjustedDurationMin),
+        weather: weatherData, // تم إرجاع حالة الطقس للمستخدم
         metadata,
         affectingCheckpoints: nearbyCheckpoints.map((checkpoint) => ({
           id: checkpoint.id,
@@ -216,18 +227,15 @@ export class RoutesService {
         })),
       };
     } catch (error) {
-      await this.prisma.externalApiLog.create({
-        data: {
-          providerName: provider,
-          endpoint: 'route-estimate',
-          requestSummary,
-          responseStatus: 500,
-          responseTimeMs: Date.now() - startedAt,
-          cached: false,
-          errorMessage:
-            error instanceof Error ? error.message : 'Unknown routing error',
-        },
-      });
+      await this.logExternalApi(
+        provider,
+        'route-estimate',
+        requestSummary,
+        500,
+        Date.now() - startedAt,
+        false,
+        error instanceof Error ? error.message : 'Unknown routing error'
+      );
 
       throw error;
     }
@@ -314,6 +322,8 @@ export class RoutesService {
     };
   }
 
+  // --- دوال الـ Providers والمساعدة (تتضمن متطلبات المرحلة 7) ---
+
   private async callRoutingProvider(
     provider: string,
     osrmBaseUrl: string,
@@ -328,7 +338,13 @@ export class RoutesService {
       `${dto.origin.lng},${dto.origin.lat};${dto.destination.lng},${dto.destination.lat}` +
       `?overview=false&steps=false&annotations=false`;
 
-    const response = await firstValueFrom(this.httpService.get(url));
+    // Timeout (5s) + Retry (1 time)
+    const response = await firstValueFrom(
+      this.httpService.get(url).pipe(
+        timeout(5000),
+        retry(1), 
+      )
+    );
     const data = response.data;
 
     if (!data?.routes?.length) {
@@ -341,6 +357,81 @@ export class RoutesService {
       distanceKm: route.distance / 1000,
       durationMin: Math.round(route.duration / 60),
     };
+  }
+
+  private async getWeather(lat: number, lon: number) {
+    const apiKey = this.configService.get<string>('WEATHER_API_KEY');
+    if (!apiKey) return null; // تجاوز في حال لم يتم إعداد المفتاح
+
+    const cacheKey = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+    const cached = this.weatherCache.get(cacheKey);
+
+    const startedAt = Date.now();
+    const providerName = 'OpenWeather';
+
+    // التحقق من التخزين المؤقت (Caching)
+    if (cached && cached.expiry > Date.now()) {
+      await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 200, Date.now() - startedAt, true);
+      return cached.data;
+    }
+
+    const baseUrl = this.configService.get<string>('WEATHER_BASE_URL') || 'https://api.openweathermap.org/data/2.5/weather';
+    const url = `${baseUrl}?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+
+    try {
+      // Timeout (5s) + Catch Error (حتى لا يتعطل المسار إذا تعطل الطقس)
+      const response = await firstValueFrom(
+        this.httpService.get(url).pipe(
+          timeout(5000),
+          catchError(() => of({ data: null }))
+        )
+      );
+
+      if (response?.data) {
+        const weatherData = {
+          main: response.data.weather[0].main,
+          description: response.data.weather[0].description,
+          temp: response.data.main.temp,
+        };
+        
+        // حفظ في الكاش لمدة 10 دقائق
+        this.weatherCache.set(cacheKey, { data: weatherData, expiry: Date.now() + 600000 });
+        
+        await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 200, Date.now() - startedAt, false);
+        return weatherData;
+      }
+      return null;
+    } catch (e) {
+      await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 500, Date.now() - startedAt, false, e.message);
+      this.logger.error('Weather API failed', e);
+      return null;
+    }
+  }
+
+  private async logExternalApi(
+    providerName: string,
+    endpoint: string,
+    requestSummary: string,
+    responseStatus: number,
+    responseTimeMs: number,
+    cached: boolean,
+    errorMessage?: string
+  ) {
+    try {
+      await this.prisma.externalApiLog.create({
+        data: {
+          providerName,
+          endpoint,
+          requestSummary,
+          responseStatus,
+          responseTimeMs,
+          cached,
+          errorMessage,
+        },
+      });
+    } catch (err) {
+      this.logger.error('Failed to log to ExternalApiLog', err);
+    }
   }
 
   private async resolveAvoidAreas(avoidAreas?: string[]) {
