@@ -338,9 +338,9 @@ export class RoutesService {
     const route = data.routes[0];
 
     return {
-  distanceKm: route.distance / 1000,
-  durationMin: Math.round(route.duration / 60),
-};
+      distanceKm: route.distance / 1000,
+      durationMin: Math.round(route.duration / 60),
+    };
   }
 
   private async resolveAvoidAreas(avoidAreas?: string[]) {

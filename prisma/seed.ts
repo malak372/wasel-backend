@@ -4,12 +4,47 @@ import * as bcrypt from "bcrypt";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+/**
+ * Seed Script
+ * -----------
+ * Author: All Team Members
+ *
+ * This script initializes the database with default seed data
+ * required for development, testing, and demonstration purposes.
+ *
+ * Responsibilities:
+ * - Establish a database connection using Prisma and PostgreSQL
+ * - Hash predefined user passwords securely
+ * - Insert or update base system data using upsert operations
+ * - Populate users, regions, categories, checkpoints, incidents,
+ *   reports, votes, moderation actions, subscriptions, alerts,
+ *   routes, and external API logs
+ *
+ * Design Goals:
+ * - Safe re-execution through upsert and cleanup logic
+ * - Deterministic seeded records using fixed UUID values
+ * - Consistent initial system state for testing
+ */
+
 const connectionString = process.env.DATABASE_URL;
 
+/**
+ * Validates the database connection string.
+ *
+ * Throws:
+ * - Error if DATABASE_URL is missing
+ */
 if (!connectionString) {
   throw new Error("DATABASE_URL is not set");
 }
 
+/**
+ * PostgreSQL connection pool used by Prisma adapter.
+ *
+ * Configuration:
+ * - Uses the DATABASE_URL environment variable
+ * - Enables SSL connection with relaxed certificate validation
+ */
 const pool = new Pool({
   connectionString,
   ssl: {
@@ -17,23 +52,80 @@ const pool = new Pool({
   },
 });
 
+/**
+ * Prisma PostgreSQL adapter connected to the pg Pool.
+ */
 const adapter = new PrismaPg(pool);
+
+/**
+ * Prisma client instance used for all database operations in this script.
+ */
 const prisma = new PrismaClient({ adapter });
 
+/**
+ * hashPassword
+ * ------------
+ * Hashes a plain-text password using bcrypt.
+ *
+ * @param password - Raw plain-text password
+ * @returns Promise<string> - Securely hashed password
+ *
+ * Purpose:
+ * - Ensures passwords are never stored in plain text
+ */
 async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
+/**
+ * main
+ * ----
+ * Main seed execution function.
+ *
+ * Responsibilities:
+ * - Prepares hashed passwords
+ * - Seeds all core entities in dependency-safe order
+ * - Ensures records are inserted or updated consistently
+ *
+ * Seed Order:
+ * 1. Users
+ * 2. Fixed IDs
+ * 3. Regions
+ * 4. Incident categories
+ * 5. Checkpoints
+ * 6. Checkpoint status history
+ * 7. Incidents
+ * 8. Incident status history
+ * 9. Citizen reports
+ * 10. Report votes
+ * 11. Moderation actions
+ * 12. Alert subscriptions
+ * 13. Alerts
+ * 14. Route
+ * 15. External API logs
+ */
 async function main() {
   console.log("🌱 Seeding database...");
 
+  /**
+   * Pre-hashed passwords for seeded users.
+   */
   const adminPassword = await hashPassword("Admin123!");
   const moderatorPassword = await hashPassword("Moderator123!");
   const citizenPassword = await hashPassword("Citizen123!");
 
-  // =========================
-  // Users
-  // =========================
+  /**
+   * Users
+   * -----
+   * Seeds the default application users.
+   *
+   * Includes:
+   * - One admin
+   * - One moderator
+   * - Three citizen accounts
+   *
+   * Uses upsert to avoid duplication on repeated seed runs.
+   */
   const admin = await prisma.user.upsert({
     where: { email: "admin@wasel.ps" },
     update: {
@@ -119,9 +211,15 @@ async function main() {
     },
   });
 
-  // =========================
-  // Fixed valid UUIDs
-  // =========================
+  /**
+   * Fixed valid UUIDs
+   * -----------------
+   * Defines deterministic identifiers for seeded entities.
+   *
+   * Purpose:
+   * - Ensures stable references across repeated runs
+   * - Makes relationships predictable during testing
+   */
   const REGION_NABLUS_GOVERNORATE_ID = "7d1a2c4e-5b6f-4a8d-9c10-1f2e3d4c5b6a";
   const REGION_NABLUS_CITY_ID = "8a2b3c4d-6e7f-4a1b-9c2d-3e4f5a6b7c8d";
   const REGION_BEIT_FURIK_ID = "9b3c4d5e-7f8a-4b1c-8d2e-4f5a6b7c8d9e";
@@ -145,9 +243,17 @@ async function main() {
 
   const ROUTE_1_ID = "a87d8e9f-0a1b-4c1d-9e2f-7a8b9c0d1e2f";
 
-  // =========================
-  // Regions
-  // =========================
+  /**
+   * Regions
+   * -------
+   * Seeds geographic regions with hierarchical structure.
+   *
+   * Includes:
+   * - Nablus Governorate
+   * - Nablus City
+   * - Beit Furik
+   * - Huwara Area
+   */
   const nablusGovernorate = await prisma.region.upsert({
     where: { id: REGION_NABLUS_GOVERNORATE_ID },
     update: {
@@ -208,9 +314,19 @@ async function main() {
     },
   });
 
-  // =========================
-  // Incident categories
-  // =========================
+  /**
+   * Incident Categories
+   * -------------------
+   * Seeds the supported incident classification values.
+   *
+   * Includes categories such as:
+   * - closure
+   * - delay
+   * - accident
+   * - weather_hazard
+   * - military_activity
+   * - road_damage
+   */
   const closureCategory = await prisma.incidentCategory.upsert({
     where: { name: "closure" },
     update: { description: "Road is fully closed" },
@@ -256,9 +372,12 @@ async function main() {
     },
   });
 
-  // =========================
-  // Checkpoints
-  // =========================
+  /**
+   * Checkpoints
+   * -----------
+   * Seeds physical checkpoints with coordinates, region assignments,
+   * descriptions, and current operational status.
+   */
   const huwaraCheckpoint = await prisma.checkpoint.upsert({
     where: { id: CHECKPOINT_HUWARA_ID },
     update: {
@@ -301,9 +420,14 @@ async function main() {
     },
   });
 
-  // =========================
-  // Checkpoint status history
-  // =========================
+  /**
+   * Checkpoint Status History
+   * -------------------------
+   * Seeds checkpoint history records to simulate status changes over time.
+   *
+   * Existing records for the selected checkpoints are cleared first
+   * to ensure deterministic seed results.
+   */
   await prisma.checkpointStatusHistory.deleteMany({
     where: {
       checkpointId: { in: [huwaraCheckpoint.id, beitFurikCheckpoint.id] },
@@ -333,9 +457,15 @@ async function main() {
     ],
   });
 
-  // =========================
-  // Incidents
-  // =========================
+  /**
+   * Incidents
+   * ---------
+   * Seeds incident records representing real-world traffic or road events.
+   *
+   * Includes:
+   * - One open crowd-sourced delay incident
+   * - One verified official road damage incident
+   */
   const incident1 = await prisma.incident.upsert({
     where: { id: INCIDENT_1_ID },
     update: {
@@ -412,9 +542,11 @@ async function main() {
     },
   });
 
-  // =========================
-  // Incident status history
-  // =========================
+  /**
+   * Incident Status History
+   * -----------------------
+   * Seeds audit trail records for incident lifecycle transitions.
+   */
   await prisma.incidentStatusHistory.deleteMany({
     where: {
       incidentId: { in: [incident1.id, incident2.id] },
@@ -440,9 +572,16 @@ async function main() {
     ],
   });
 
-  // =========================
-  // Citizen reports
-  // =========================
+  /**
+   * Citizen Reports
+   * ---------------
+   * Seeds sample citizen reports.
+   *
+   * Includes:
+   * - One pending report
+   * - One merged duplicate report
+   * - One approved report
+   */
   const report1 = await prisma.citizenReport.upsert({
     where: { id: REPORT_1_ID },
     update: {
@@ -528,9 +667,14 @@ async function main() {
     },
   });
 
-  // =========================
-  // Report votes
-  // =========================
+  /**
+   * Report Votes
+   * ------------
+   * Seeds crowd votes on reports to support confidence evaluation.
+   *
+   * Existing votes for seeded reports are deleted first
+   * to avoid duplication across repeated runs.
+   */
   await prisma.reportVote.deleteMany({
     where: {
       reportId: { in: [report1.id, report2.id, report3.id] },
@@ -562,9 +706,15 @@ async function main() {
     ],
   });
 
-  // =========================
-  // Moderation actions
-  // =========================
+  /**
+   * Moderation Actions
+   * ------------------
+   * Seeds moderation log entries for reports and incidents.
+   *
+   * Purpose:
+   * - Simulates moderator review actions
+   * - Supports audit trail testing
+   */
   await prisma.moderationAction.deleteMany({
     where: {
       targetId: { in: [report2.id, report3.id, incident2.id] },
@@ -597,9 +747,11 @@ async function main() {
     ],
   });
 
-  // =========================
-  // Alert subscriptions
-  // =========================
+  /**
+   * Alert Subscriptions
+   * -------------------
+   * Seeds user alert preferences based on region and category.
+   */
   const sub1 = await prisma.alertSubscription.upsert({
     where: { id: SUB_1_ID },
     update: {
@@ -634,9 +786,11 @@ async function main() {
     },
   });
 
-  // =========================
-  // Alerts
-  // =========================
+  /**
+   * Alerts
+   * ------
+   * Seeds sample alert delivery records linked to subscriptions and incidents.
+   */
   await prisma.alert.deleteMany({
     where: {
       id: {
@@ -664,9 +818,17 @@ async function main() {
     ],
   });
 
-  // =========================
-  // Route
-  // =========================
+  /**
+   * Route
+   * -----
+   * Seeds a sample saved route record used for route estimation testing.
+   *
+   * Includes:
+   * - Origin and destination coordinates
+   * - Estimated distance and duration
+   * - Avoidance preferences
+   * - Metadata for route analysis
+   */
   await prisma.route.upsert({
     where: { id: ROUTE_1_ID },
     update: {
@@ -712,9 +874,14 @@ async function main() {
     },
   });
 
-  // =========================
-  // External API logs
-  // =========================
+  /**
+   * External API Logs
+   * -----------------
+   * Seeds example records representing third-party API calls.
+   *
+   * Purpose:
+   * - Supports testing of monitoring and integration logging
+   */
   await prisma.externalApiLog.deleteMany({
     where: {
       providerName: { in: ["openrouteservice", "openweather"] },
@@ -744,16 +911,37 @@ async function main() {
     ],
   });
 
+  /**
+   * Completion Output
+   * -----------------
+   * Prints seed completion status and seeded login credentials.
+   */
   console.log("✅ Seed completed successfully.");
   console.log("Admin:", admin.email, "/ password: Admin123!");
   console.log("Moderator:", moderator.email, "/ password: Moderator123!");
   console.log("Citizen:", citizen1.email, "/ password: Citizen123!");
 
+  /**
+   * Keeps seeded category variables intentionally referenced
+   * to avoid unused variable warnings.
+   */
   void closureCategory;
   void weatherHazardCategory;
   void militaryActivityCategory;
 }
 
+/**
+ * Script Execution
+ * ----------------
+ * Executes the main seed function and ensures cleanup behavior.
+ *
+ * Behavior:
+ * - Runs the seed process
+ * - Logs any failure
+ * - Exits with non-zero status on error
+ * - Disconnects Prisma client
+ * - Closes PostgreSQL pool
+ */
 main()
   .catch((e) => {
     console.error("❌ Seed failed:");
