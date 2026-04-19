@@ -2,21 +2,16 @@
  * Prisma Schema
  * -------------
  * Author: All Team Members
- *
  * This schema defines the complete database structure for the system.
- *
  * It includes:
  * - Core entities such as users, incidents, reports, routes, and alerts
  * - Enum definitions for controlled values
  * - Relationships between models
  * - Indexes and constraints for performance and data integrity
- *
  * Database Provider:
  * - PostgreSQL
- *
  * ORM:
  * - Prisma Client
- *
  * Purpose:
  * - Acts as the single source of truth for the database design
  * - Enables type-safe database access through Prisma Client
@@ -34,7 +29,6 @@ datasource db {
  * UserRole
  * --------
  * Defines the available roles in the system.
- *
  * Values:
  * - citizen: Standard user role
  * - moderator: Role responsible for moderation actions
@@ -166,13 +160,11 @@ enum AlertDeliveryStatus {
  * User
  * ----
  * Represents system users.
- *
  * Responsibilities:
  * - Owns reports
  * - Casts votes
  * - Performs moderation actions
  * - Can be linked to incidents and routes
- *
  * Notes:
  * - Email is unique
  * - Password is stored as a hash
@@ -206,7 +198,6 @@ model User {
  * Region
  * ------
  * Represents geographical areas in the system.
- *
  * Features:
  * - Supports hierarchical regions using self-relation
  * - Connects incidents, checkpoints, reports, and subscriptions to locations
@@ -232,13 +223,11 @@ model Region {
  * Checkpoint
  * ----------
  * Represents a physical checkpoint.
- *
  * Fields include:
  * - Name
  * - Geographic coordinates
  * - Region association
  * - Current operational status
- *
  * Relationships:
  * - Belongs to a region
  * - Has incident links
@@ -268,7 +257,6 @@ model Checkpoint {
  * CheckpointStatusHistory
  * -----------------------
  * Stores status changes for checkpoints.
- *
  * Purpose:
  * - Provides an audit trail for checkpoint updates
  * - Records who changed the status and when
@@ -293,7 +281,6 @@ model CheckpointStatusHistory {
  * IncidentCategory
  * ----------------
  * Defines report and incident categories.
- *
  * Examples:
  * - accident
  * - closure
@@ -314,7 +301,6 @@ model IncidentCategory {
  * Incident
  * --------
  * Represents an incident in the system.
- *
  * Features:
  * - Supports severity and lifecycle status
  * - Can be linked to a checkpoint or region
@@ -368,7 +354,6 @@ model Incident {
  * IncidentStatusHistory
  * ---------------------
  * Stores incident status transitions over time.
- *
  * Purpose:
  * - Maintains audit history
  * - Records old and new status values
@@ -395,7 +380,6 @@ model IncidentStatusHistory {
  * CitizenReport
  * -------------
  * Represents reports submitted by users.
- *
  * Features:
  * - Linked to categories and optional incidents
  * - Supports coordinates or region-based location
@@ -440,10 +424,8 @@ model CitizenReport {
  * ReportVote
  * ----------
  * Represents a user vote on a report.
- *
  * Rules:
  * - One user can vote only once per report
- *
  * Purpose:
  * - Supports crowd-based validation
  * - Contributes to confidence score calculation
@@ -466,7 +448,6 @@ model ReportVote {
  * ModerationAction
  * ----------------
  * Represents moderation actions performed by moderators or admins.
- *
  * Purpose:
  * - Tracks moderation events for auditability
  * - Stores target type, action type, and reason
@@ -491,11 +472,9 @@ model ModerationAction {
  * AlertSubscription
  * -----------------
  * Represents a user's alert subscription preferences.
- *
  * Supports:
  * - Region-based subscriptions
  * - Category-based subscriptions
- *
  * Includes a uniqueness constraint to prevent duplicate subscriptions.
  */
 model AlertSubscription {
@@ -522,7 +501,6 @@ model AlertSubscription {
  * Alert
  * -----
  * Represents a delivered or pending notification related to an incident.
- *
  * Features:
  * - Linked to an incident
  * - Linked to a user subscription
@@ -549,7 +527,6 @@ model Alert {
  * Route
  * -----
  * Represents a saved route estimation between two points.
- *
  * Includes:
  * - Origin and destination names and coordinates
  * - Estimated distance and duration
@@ -580,7 +557,6 @@ model Route {
  * ExternalApiLog
  * --------------
  * Stores logs for requests made to external APIs.
- *
  * Purpose:
  * - Supports monitoring and debugging of integrations
  * - Captures endpoint, response status, timing, and errors
@@ -605,21 +581,19 @@ model ExternalApiLog {
  * RefreshToken
  * ------------
  * Stores refresh tokens used for authentication.
- *
  * Security:
  * - Token values are stored as hashes
  * - Supports expiration and revocation
- *
  * Purpose:
  * - Enables secure refresh-token-based session handling
  */
 model RefreshToken {
-  id         String    @id @default(uuid())
-  userId     String    @map("user_id")
-  tokenHash  String    @map("token_hash")
-  expiresAt  DateTime  @map("expires_at")
-  revokedAt  DateTime? @map("revoked_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -627,76 +601,4 @@ model RefreshToken {
   @@index([expiresAt])
   @@index([revokedAt])
   @@map("refresh_tokens")
-}
-
-enum UserRole {
-  citizen
-  moderator
-  admin
-}
-
-enum CheckpointStatus {
-  open
-  delayed
-  closed
-  unknown
-}
-
-enum IncidentSeverity {
-  low
-  medium
-  high
-  critical
-}
-
-enum IncidentStatus {
-  open
-  verified
-  closed
-  rejected
-}
-
-enum IncidentSourceType {
-  official
-  crowd
-  external_api
-}
-
-enum ReportStatus {
-  pending
-  approved
-  rejected
-  merged
-}
-
-enum VoteType {
-  confirm
-  deny
-}
-
-enum ModerationTargetType {
-  report
-  incident
-}
-
-enum ModerationActionType {
-  approve
-  reject
-  verify
-  close
-  merge
-  flag
-}
-
-enum RegionType {
-  city
-  village
-  governorate
-  area
-}
-
-enum AlertDeliveryStatus {
-  pending
-  sent
-  failed
 }
