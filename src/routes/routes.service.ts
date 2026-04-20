@@ -12,24 +12,104 @@ import { GetRoutesQueryDto } from './dto/get-routes-query.dto';
 import { firstValueFrom, timeout, retry, catchError, of } from 'rxjs';
 import { CheckpointStatus, IncidentStatus, Prisma } from '@prisma/client';
 
+/**
+ * CurrentUserType
+ * ---------------
+ * Author: Eman
+ *
+ * Represents the authenticated user data
+ * passed to route service methods.
+ */
 type CurrentUserType = {
   userId: string;
   email: string;
   role: string;
 };
 
+/**
+ * RoutesService
+ * -------------
+ * Author: Eman
+ *
+ * Service responsible for route estimation and route retrieval.
+ *
+ * Main Responsibilities:
+ * - Estimate routes between origin and destination.
+ * - Integrate with external routing provider (OSRM).
+ * - Optionally fetch weather data for the destination.
+ * - Consider affected checkpoints and verified incidents.
+ * - Resolve avoid areas based on region names or IDs.
+ * - Store estimated routes in the database.
+ * - Retrieve route history for the authenticated user.
+ * - Log external API calls for monitoring purposes.
+ */
 @Injectable()
 export class RoutesService {
+
+  /**
+   * logger
+   * ------
+   * Used for internal logging inside the service.
+   */
   private readonly logger = new Logger(RoutesService.name);
-  
+
+  /**
+   * weatherCache
+   * ------------
+   * In-memory cache used to temporarily store weather responses.
+   *
+   * Cache Structure:
+   * - key: string representing latitude and longitude
+   * - value: cached weather data with expiry timestamp
+   */
   private weatherCache = new Map<string, { data: any; expiry: number }>();
 
+  /**
+   * constructor
+   * -----------
+   * Injects required dependencies for database access,
+   * external HTTP requests, and application configuration.
+   *
+   * @param prisma Database service used for Prisma queries.
+   * @param httpService HTTP client used for external API calls.
+   * @param configService Configuration service used for environment variables.
+   */
   constructor(
     private readonly prisma: PrismaService,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * estimateRoute
+   * -------------
+   * Estimates a route between origin and destination.
+   *
+   * This method:
+   * - Calls the routing provider to get a base route estimate.
+   * - Fetches weather information for the destination.
+   * - Finds nearby delayed/closed checkpoints.
+   * - Finds nearby verified incidents.
+   * - Resolves avoid areas provided by the user.
+   * - Adjusts estimated distance and duration logically.
+   * - Stores the created route in the database.
+   * - Logs external API activity.
+   *
+   * @param dto DTO containing origin, destination, and route preferences.
+   * @param user Authenticated user requesting the route.
+   *
+   * @returns An object containing:
+   * - route ID
+   * - route summary
+   * - estimated distance and duration
+   * - weather information
+   * - metadata
+   * - affecting checkpoints and incidents
+   * - applied avoid areas
+   *
+   * @throws BadGatewayException if the routing provider fails.
+   * @throws Error if any unexpected issue happens during estimation.
+   */
   async estimateRoute(dto: EstimateRouteDto, user: CurrentUserType) {
     const startedAt = Date.now();
 
@@ -142,6 +222,12 @@ export class RoutesService {
         );
       }
 
+      /**
+       * metadata
+       * --------
+       * Stores additional technical and contextual information
+       * about the generated route estimate.
+       */
       const metadata = {
         usedProvider: provider,
         providerRouteDistanceKm: routingResult.distanceKm,
@@ -184,7 +270,6 @@ export class RoutesService {
         },
       });
 
-      // Log OSRM Success
       await this.logExternalApi(
         provider,
         'route-estimate',
@@ -200,7 +285,7 @@ export class RoutesService {
         destination: dto.destination,
         estimatedDistanceKm: Number(adjustedDistanceKm.toFixed(2)),
         estimatedDurationMin: Math.round(adjustedDurationMin),
-        weather: weatherData, 
+        weather: weatherData,
         metadata,
         affectingCheckpoints: nearbyCheckpoints.map((checkpoint) => ({
           id: checkpoint.id,
@@ -237,6 +322,22 @@ export class RoutesService {
     }
   }
 
+  /**
+   * findAll
+   * -------
+   * Retrieves all routes created by the authenticated user
+   * with pagination support.
+   *
+   * @param user Authenticated user.
+   * @param query Query DTO containing page and limit values.
+   *
+   * @returns Paginated route history including:
+   * - page number
+   * - limit
+   * - total records
+   * - total pages
+   * - route data
+   */
   async findAll(user: CurrentUserType, query: GetRoutesQueryDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -282,6 +383,20 @@ export class RoutesService {
     };
   }
 
+  /**
+   * findOne
+   * -------
+   * Retrieves one specific route by its ID
+   * for the authenticated user only.
+   *
+   * @param id Route ID.
+   * @param user Authenticated user.
+   *
+   * @returns Detailed route information.
+   *
+   * @throws NotFoundException if the route does not exist
+   * or does not belong to the authenticated user.
+   */
   async findOne(id: string, user: CurrentUserType) {
     const route = await this.prisma.route.findFirst({
       where: {
@@ -318,7 +433,30 @@ export class RoutesService {
     };
   }
 
-
+  /**
+   * callRoutingProvider
+   * -------------------
+   * Calls the configured external routing provider
+   * to estimate distance and duration.
+   *
+   * Current Supported Provider:
+   * - OSRM
+   *
+   * Features:
+   * - 5 seconds timeout
+   * - 1 retry attempt
+   *
+   * @param provider Provider name.
+   * @param osrmBaseUrl Base URL of the OSRM service.
+   * @param dto Route estimation DTO.
+   *
+   * @returns Base route estimate including:
+   * - distance in kilometers
+   * - duration in minutes
+   *
+   * @throws BadGatewayException if provider is unsupported
+   * or if no route is returned.
+   */
   private async callRoutingProvider(
     provider: string,
     osrmBaseUrl: string,
@@ -333,11 +471,10 @@ export class RoutesService {
       `${dto.origin.lng},${dto.origin.lat};${dto.destination.lng},${dto.destination.lat}` +
       `?overview=false&steps=false&annotations=false`;
 
-    // Timeout (5s) + Retry (1 time)
     const response = await firstValueFrom(
       this.httpService.get(url).pipe(
         timeout(5000),
-        retry(1), 
+        retry(1),
       )
     );
     const data = response.data;
@@ -354,9 +491,29 @@ export class RoutesService {
     };
   }
 
+  /**
+   * getWeather
+   * ----------
+   * Fetches weather information for a given latitude and longitude.
+   *
+   * Behavior:
+   * - Returns null if WEATHER_API_KEY is not configured.
+   * - Uses in-memory cache to reduce repeated API calls.
+   * - Logs all external API interactions.
+   *
+   * @param lat Latitude of the destination.
+   * @param lon Longitude of the destination.
+   *
+   * @returns Weather object containing:
+   * - main weather condition
+   * - description
+   * - temperature
+   *
+   * Returns null if weather data is unavailable.
+   */
   private async getWeather(lat: number, lon: number) {
     const apiKey = this.configService.get<string>('WEATHER_API_KEY');
-    if (!apiKey) return null; 
+    if (!apiKey) return null;
 
     const cacheKey = `${lat.toFixed(2)},${lon.toFixed(2)}`;
     const cached = this.weatherCache.get(cacheKey);
@@ -386,16 +543,16 @@ export class RoutesService {
           description: response.data.weather[0].description,
           temp: response.data.main.temp,
         };
-        
+
         this.weatherCache.set(cacheKey, { data: weatherData, expiry: Date.now() + 600000 });
-        
+
         await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 200, Date.now() - startedAt, false);
         return weatherData;
       }
       return null;
     } catch (e) {
       await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 500, Date.now() - startedAt, false, (e as any).message);
-       const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
 
       await this.logExternalApi(
         providerName,
@@ -411,6 +568,28 @@ export class RoutesService {
     }
   }
 
+  /**
+   * logExternalApi
+   * --------------
+   * Stores an external API request log in the database.
+   *
+   * Logged Information:
+   * - provider name
+   * - endpoint
+   * - request summary
+   * - response status
+   * - response time
+   * - whether the response was cached
+   * - optional error message
+   *
+   * @param providerName External API provider name.
+   * @param endpoint Called endpoint name.
+   * @param requestSummary Serialized request details.
+   * @param responseStatus HTTP-like status code.
+   * @param responseTimeMs Execution time in milliseconds.
+   * @param cached Indicates whether cached data was used.
+   * @param errorMessage Optional error message.
+   */
   private async logExternalApi(
     providerName: string,
     endpoint: string,
@@ -437,6 +616,20 @@ export class RoutesService {
     }
   }
 
+  /**
+   * resolveAvoidAreas
+   * -----------------
+   * Resolves the user-provided avoid areas into matching regions
+   * from the database.
+   *
+   * Matching Rules:
+   * - Match by region ID
+   * - Match by region name (case-insensitive)
+   *
+   * @param avoidAreas Optional array of region IDs or names.
+   *
+   * @returns Array of matched regions.
+   */
   private async resolveAvoidAreas(avoidAreas?: string[]) {
     if (!avoidAreas || avoidAreas.length === 0) {
       return [];

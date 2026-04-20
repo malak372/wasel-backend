@@ -21,63 +21,68 @@ import { VoteReportDto } from './dto/vote-report.dto';
  * ---------------------
  * Author: Malak
  *
- * Service responsible for managing the full citizen report lifecycle.
+ * A service responsible for managing the complete citizen reporting workflow
+ * in the Wasel backend system.
  *
  * This service handles:
- * - Creating reports
- * - Retrieving reports
- * - Retrieving a single report
- * - Approving reports
+ * - Creating citizen reports
+ * - Retrieving lists of reports with filtering and pagination
+ * - Retrieving a single report with related details
+ * - Approving reports and linking them to incidents
  * - Rejecting reports
  * - Merging duplicate reports
- * - Recording user votes
- * - Detecting possible duplicates
+ * - Recording report votes
+ * - Detecting possible duplicate submissions
  * - Calculating and updating confidence scores
  *
  * Responsibilities:
- * - Validates business rules beyond DTO validation
- * - Interacts with the database using Prisma
- * - Enforces moderation and ownership constraints
- * - Maintains moderation logs and voting integrity
+ * - Enforce business rules beyond DTO validation
+ * - Interact with the database using Prisma
+ * - Preserve moderation consistency through transactions
+ * - Prevent invalid voting and moderation actions
+ * - Maintain report reliability scoring
  *
  * Dependencies:
- * - PrismaService: Used for all database operations
+ * - PrismaService: Used for all database access and persistence
  *
  * Notes:
- * - This service works closely with moderation workflows.
- * - Some methods use transactions to ensure consistency across related operations.
+ * - Moderation actions are logged for auditability
+ * - Some operations use transactions to keep related changes consistent
+ * - Confidence scores are recalculated after major report lifecycle events
  */
 @Injectable()
 export class CitizenReportsService {
   /**
    * Constructor
    * -----------
-   * Injects PrismaService to perform database operations.
+   * Initializes the CitizenReportsService with PrismaService.
    *
-   * @param prisma - Prisma client wrapper used for querying and updating the database
+   * @param prisma - Prisma service used for querying and updating the database
    */
   constructor(private readonly prisma: PrismaService) {}
 
   /**
    * create
    * ------
-   * Creates a new citizen report.
+   * Creates a new citizen report and performs initial validation,
+   * duplicate detection, and confidence score assignment.
    *
-   * @param dto - Data required to create the report
+   * Process:
+   * 1. Ensures either regionId or coordinates are provided
+   * 2. Validates that the report description is not empty
+   * 3. Confirms that the category exists
+   * 4. Confirms that the region exists when regionId is provided
+   * 5. Applies anti-spam protection using a minimum submission interval
+   * 6. Detects possible duplicate reports
+   * 7. Calculates an initial confidence score
+   * 8. Stores the report in the database
+   *
+   * @param dto - Payload used to create the report
    * @param user - Authenticated user submitting the report
-   * @returns Newly created report with duplicate detection metadata
-   *
-   * Behavior:
-   * - Ensures regionId or coordinates are provided
-   * - Validates that the description is not empty
-   * - Confirms category and region existence
-   * - Applies anti-spam protection by enforcing a minimum time gap between submissions
-   * - Detects possible duplicate reports
-   * - Calculates an initial confidence score
-   * - Stores the report in the database
+   * @returns Created report along with duplicate detection and confidence metadata
    *
    * Throws:
-   * - BadRequestException if required data is invalid or missing
+   * - BadRequestException if required data is missing or invalid
    * - HttpException with TOO_MANY_REQUESTS if reports are submitted too frequently
    */
   async create(
@@ -195,16 +200,16 @@ export class CitizenReportsService {
   /**
    * findAll
    * -------
-   * Retrieves a filtered, sorted, and paginated list of reports.
+   * Retrieves a paginated list of reports with optional filtering and sorting.
    *
-   * @param query - Query parameters used for filtering and pagination
-   * @returns Paginated report list
+   * Supports:
+   * - Filtering by status, category, region, incident, and user
+   * - Filtering by date range
+   * - Sorting by supported fields
+   * - Pagination through page and limit
    *
-   * Behavior:
-   * - Applies optional filters such as status, category, region, incident, and user
-   * - Supports date range filtering
-   * - Supports sorting and ordering
-   * - Supports pagination using page and limit
+   * @param query - Query parameters for filtering, sorting, and pagination
+   * @returns Paginated collection of reports and total metadata
    */
   async findAll(query: GetReportsQueryDto) {
     const page = query.page ?? 1;
@@ -273,19 +278,19 @@ export class CitizenReportsService {
   /**
    * findOne
    * -------
-   * Retrieves a single report by its identifier.
+   * Retrieves a single report by its identifier with related entities.
+   *
+   * Behavior:
+   * - Loads category, region, incident, duplicate relationships, and votes
+   * - Restricts citizen users to accessing only their own reports
    *
    * @param id - Report identifier
    * @param user - Authenticated user requesting the report
-   * @returns Detailed report data
-   *
-   * Behavior:
-   * - Retrieves related entities such as category, region, incident, duplicates, and votes
-   * - Enforces access control for citizen users
+   * @returns Detailed report object with normalized confidence score
    *
    * Throws:
    * - NotFoundException if the report does not exist
-   * - ForbiddenException if the user is not allowed to access the report
+   * - ForbiddenException if the user is not allowed to view the report
    */
   async findOne(id: string, user: { userId: string; role: string }) {
     const report = await this.prisma.citizenReport.findUnique({
@@ -339,26 +344,29 @@ export class CitizenReportsService {
   /**
    * approve
    * -------
-   * Approves a report and optionally links it to an existing incident
-   * or creates a new incident.
+   * Approves a citizen report and either links it to an existing incident
+   * or creates a new incident when needed.
+   *
+   * Process:
+   * 1. Confirms that the report exists
+   * 2. Prevents approving an already approved report
+   * 3. Loads an existing incident if incidentId is provided
+   * 4. Creates a new incident if no incident is linked
+   * 5. Updates the report status to approved
+   * 6. Stores a moderation action record
+   * 7. Recalculates the report confidence score
+   *
+   * Transaction Use:
+   * - Keeps incident creation/linking, report update, and moderation log atomic
    *
    * @param id - Report identifier
-   * @param dto - Approval payload
-   * @param moderator - Authenticated moderator/admin performing the action
-   * @returns Approval result with updated report data
-   *
-   * Behavior:
-   * - Verifies that the report exists
-   * - Prevents re-approving already approved reports
-   * - Links to an existing incident if incidentId is provided
-   * - Creates a new incident if needed
-   * - Marks the report as approved
-   * - Writes a moderation action log
-   * - Recalculates confidence score after approval
+   * @param dto - Approval request payload
+   * @param moderator - Moderator or admin performing the approval
+   * @returns Updated approved report with recalculated confidence score
    *
    * Throws:
-   * - NotFoundException if the report or incident is not found
-   * - BadRequestException for invalid approval scenarios
+   * - NotFoundException if the report or incident does not exist
+   * - BadRequestException if the report is already approved
    */
   async approve(
     id: string,
@@ -461,19 +469,22 @@ export class CitizenReportsService {
   /**
    * reject
    * ------
-   * Rejects a report and records the moderation decision.
+   * Rejects a report and records the moderation action.
+   *
+   * Process:
+   * 1. Confirms that the report exists
+   * 2. Prevents rejecting an already approved report
+   * 3. Updates the report status to rejected
+   * 4. Stores a moderation action record
+   * 5. Recalculates the report confidence score
+   *
+   * Transaction Use:
+   * - Keeps report status update and moderation logging consistent
    *
    * @param id - Report identifier
-   * @param dto - Rejection payload
-   * @param moderator - Authenticated moderator/admin performing the action
-   * @returns Rejection result with updated report data
-   *
-   * Behavior:
-   * - Ensures the report exists
-   * - Prevents rejecting already approved reports
-   * - Updates the report status to rejected
-   * - Writes a moderation action log
-   * - Recalculates confidence score after rejection
+   * @param dto - Rejection request payload
+   * @param moderator - Moderator or admin performing the rejection
+   * @returns Updated rejected report with recalculated confidence score
    *
    * Throws:
    * - NotFoundException if the report is not found
@@ -545,24 +556,28 @@ export class CitizenReportsService {
   /**
    * merge
    * -----
-   * Merges a source report into a target report.
+   * Merges a source report into a target report and records the moderation action.
+   *
+   * Process:
+   * 1. Prevents merging a report into itself
+   * 2. Confirms that both source and target reports exist
+   * 3. Marks the source report as merged
+   * 4. Links it to the target report as a duplicate
+   * 5. Preserves or inherits the related incident when available
+   * 6. Stores a moderation action record
+   * 7. Recalculates the merged report confidence score
+   *
+   * Transaction Use:
+   * - Keeps merge update and moderation log consistent
    *
    * @param id - Source report identifier
-   * @param dto - Merge payload containing the target report ID
-   * @param moderator - Authenticated moderator/admin performing the action
-   * @returns Merge result with updated report data
-   *
-   * Behavior:
-   * - Prevents merging a report into itself
-   * - Verifies both source and target reports exist
-   * - Marks the source report as merged
-   * - Links it to the target report
-   * - Writes a moderation action log
-   * - Recalculates confidence score after merging
+   * @param dto - Merge request payload containing the target report ID
+   * @param moderator - Moderator or admin performing the merge
+   * @returns Updated merged report with recalculated confidence score
    *
    * Throws:
-   * - BadRequestException for invalid merge scenarios
-   * - NotFoundException if source or target report is missing
+   * - BadRequestException if the merge is invalid
+   * - NotFoundException if the source or target report is missing
    */
   async merge(
     id: string,
@@ -640,19 +655,19 @@ export class CitizenReportsService {
   /**
    * vote
    * ----
-   * Records a user vote on a report.
+   * Records a user vote on a report and updates its confidence score.
+   *
+   * Process:
+   * 1. Confirms that the report exists
+   * 2. Prevents users from voting on their own reports
+   * 3. Prevents duplicate votes from the same user
+   * 4. Creates the vote record
+   * 5. Recalculates the report confidence score
    *
    * @param id - Report identifier
-   * @param dto - Vote payload
+   * @param dto - Voting request payload
    * @param user - Authenticated user casting the vote
-   * @returns Voting result with updated confidence score
-   *
-   * Behavior:
-   * - Ensures the report exists
-   * - Prevents users from voting on their own reports
-   * - Prevents duplicate votes from the same user
-   * - Stores the vote
-   * - Recalculates the report confidence score
+   * @returns Vote result including updated confidence score
    *
    * Throws:
    * - NotFoundException if the report does not exist
@@ -708,20 +723,21 @@ export class CitizenReportsService {
   /**
    * findDuplicateCandidates
    * -----------------------
-   * Searches for possible duplicate reports based on category, region,
-   * location, and report time.
-   *
-   * @param input - Criteria used to find duplicate candidates
-   * @returns List of possible duplicate reports
+   * Searches for possible duplicate reports based on category,
+   * region, and report submission time proximity.
    *
    * Behavior:
-   * - Looks for pending or approved reports
-   * - Compares category and nearby timing
-   * - Optionally narrows results by region or location
+   * - Looks only at reports with pending or approved status
+   * - Applies a time window around the submitted report time
+   * - Optionally narrows results by region
+   * - Returns a limited list of candidate duplicates
    *
    * Purpose:
-   * - Helps detect repeated reports of the same incident
-   * - Supports confidence scoring and moderation workflows
+   * - Helps identify repeated reports describing the same event
+   * - Supports moderation decisions and confidence scoring
+   *
+   * @param input - Duplicate detection criteria
+   * @returns Candidate duplicate reports
    */
   private async findDuplicateCandidates(input: {
     categoryId: string;
@@ -761,21 +777,21 @@ export class CitizenReportsService {
   /**
    * calculateConfidenceScore
    * ------------------------
-   * Computes a confidence score for a report based on status,
-   * user votes, and duplicate penalties.
+   * Calculates a report confidence score using moderation status,
+   * vote counts, and duplicate penalties.
    *
-   * @param input - Confidence score inputs
-   * @returns number - Calculated confidence score
-   *
-   * Behavior:
-   * - Applies a base score depending on report status
-   * - Increases score for confirm votes
-   * - Decreases score for deny votes
-   * - Applies duplicate penalty when applicable
-   * - Clamps result within a defined range
+   * Scoring Logic:
+   * - Applies a base value according to report status
+   * - Adds points for confirm votes
+   * - Subtracts points for deny votes
+   * - Applies a penalty for duplicate linkage
+   * - Clamps the final score between 0 and 100
    *
    * Purpose:
-   * - Provides a measurable indicator of report reliability
+   * - Provide a numeric indicator of report reliability
+   *
+   * @param input - Confidence score calculation inputs
+   * @returns Calculated confidence score
    */
   private calculateConfidenceScore(input: {
     status: 'pending' | 'approved' | 'rejected' | 'merged';
@@ -802,20 +818,20 @@ export class CitizenReportsService {
   /**
    * recalculateAndPersistConfidence
    * -------------------------------
-   * Recomputes a report's confidence score and stores the updated value.
+   * Recomputes a report's confidence score and stores the new value.
    *
-   * @param reportId - Identifier of the report
-   * @returns number - Updated confidence score
+   * Process:
+   * 1. Loads the report and its current votes
+   * 2. Counts confirm and deny votes
+   * 3. Applies duplicate penalties when applicable
+   * 4. Recalculates the confidence score
+   * 5. Persists the updated score in the database
    *
-   * Behavior:
-   * - Loads the report and its votes
-   * - Counts confirm and deny votes
-   * - Applies duplicate penalties if needed
-   * - Recalculates the score
-   * - Persists the new score in the database
+   * @param reportId - Report identifier
+   * @returns Updated confidence score
    *
    * Throws:
-   * - NotFoundException if the report is missing
+   * - NotFoundException if the report does not exist
    */
   private async recalculateAndPersistConfidence(reportId: string): Promise<number> {
     const report = await this.prisma.citizenReport.findUnique({
