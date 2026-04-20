@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CitizenReportsController } from './citizen-reports.controller';
 import { CitizenReportsService } from './citizen-reports.service';
+import { ReportsResolver } from './report.resolver';
 
 /**
  * CitizenReportsModule
@@ -38,7 +39,7 @@ import { CitizenReportsService } from './citizen-reports.service';
  */
 @Module({
   controllers: [CitizenReportsController],
-  providers: [CitizenReportsService],
+  providers: [CitizenReportsService,ReportsResolver],
   exports: [CitizenReportsService],
 })
 export class CitizenReportsModule {}

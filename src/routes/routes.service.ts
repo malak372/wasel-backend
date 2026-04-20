@@ -402,7 +402,7 @@ export class RoutesService {
       }
       return null;
     } catch (e) {
-      await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 500, Date.now() - startedAt, false, e.message);
+      await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 500, Date.now() - startedAt, false, (e as any).message);
       this.logger.error('Weather API failed', e);
       return null;
     }

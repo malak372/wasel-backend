@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { IncidentsController } from './incidents.controller';
 import { IncidentsService } from './incidents.service';
-
+import { IncidentsResolver } from './incidents.resolver';
 /**
  * IncidentsModule
  * ---------------
@@ -30,7 +30,8 @@ import { IncidentsService } from './incidents.service';
  */
 @Module({
   controllers: [IncidentsController],
-  providers: [IncidentsService],
+  providers: [IncidentsService,IncidentsResolver],
   exports: [IncidentsService],
+  
 })
 export class IncidentsModule {}

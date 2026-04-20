@@ -18,7 +18,7 @@ export class AlertSubscriptionsService {
       });
     } catch (error) {
       // Prisma error code P2002 means Unique constraint failed
-      if (error.code === 'P2002') {
+      if ((error as any).code === 'P2002') {
         throw new ConflictException('You are already subscribed to this region/category.');
       }
       throw error;
