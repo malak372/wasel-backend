@@ -17,6 +17,8 @@ export class AlertSubscriptionsService {
         },
       });
     } catch (error) {
+      // Prisma error code P2002 means Unique constraint failed
+      if ((error as any).code === 'P2002') {
       if (
         typeof error === 'object' &&
         error !== null &&
@@ -28,7 +30,7 @@ export class AlertSubscriptionsService {
       throw error;
     }
   }
-
+  }
   async findAll(userId: string) {
     return this.prisma.alertSubscription.findMany({
       where: { userId },
@@ -38,6 +40,7 @@ export class AlertSubscriptionsService {
       },
     });
   }
+  
 
   async update(id: string, updateDto: UpdateAlertSubscriptionDto, userId: string) {
     const subscription = await this.prisma.alertSubscription.findUnique({ where: { id } });
@@ -61,4 +64,4 @@ export class AlertSubscriptionsService {
       where: { id },
     });
   }
-}
+  }

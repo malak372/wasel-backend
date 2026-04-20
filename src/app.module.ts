@@ -11,6 +11,11 @@ import { IncidentsModule } from './incidents/incidents.module';
 import { CitizenReportsModule } from './citizen-reports/citizen-reports.module';
 import { AlertSubscriptionsModule } from './alert-subscriptions/alert-subscriptions.module';
 import { AlertsModule } from './alerts/alerts.module';
+import { GraphQLModule } from '@nestjs/graphql';
+import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { HelloResolver } from './hello.resolver';
+
+
 
 /**
  * AppModule
@@ -32,6 +37,11 @@ import { AlertsModule } from './alerts/alerts.module';
  */
 @Module({
   imports: [
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+  driver: ApolloDriver,
+  autoSchemaFile: true,
+  playground: true,
+}),
 
     /**
      * ConfigModule
@@ -117,7 +127,8 @@ import { AlertsModule } from './alerts/alerts.module';
     AlertSubscriptionsModule,
     AlertsModule,
   ],
-
+  
+  
   /**
    * Controllers
    * -----------
@@ -130,6 +141,6 @@ import { AlertsModule } from './alerts/alerts.module';
    * ---------
    * Registers application-level services.
    */
-  providers: [AppService],
+  providers: [AppService,HelloResolver],
 })
 export class AppModule {}

@@ -394,6 +394,7 @@ export class RoutesService {
       }
       return null;
     } catch (e) {
+      await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 500, Date.now() - startedAt, false, (e as any).message);
        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
 
       await this.logExternalApi(
