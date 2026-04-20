@@ -22,7 +22,6 @@ type CurrentUserType = {
 export class RoutesService {
   private readonly logger = new Logger(RoutesService.name);
   
-  // نظام Caching بسيط للطقس (يحفظ الحالة لمدة 10 دقائق لتخفيف الطلبات)
   private weatherCache = new Map<string, { data: any; expiry: number }>();
 
   constructor(
@@ -47,14 +46,12 @@ export class RoutesService {
     });
 
     try {
-      // 1. جلب المسار من OSRM
       const routingResult = await this.callRoutingProvider(
         provider,
         osrmBaseUrl,
         dto,
       );
 
-      // 2. جلب حالة الطقس في منطقة الوصول
       const weatherData = await this.getWeather(dto.destination.lat, dto.destination.lng);
 
       const minLat = Math.min(dto.origin.lat, dto.destination.lat) - 0.1;
@@ -117,7 +114,6 @@ export class RoutesService {
 
       const notes: string[] = [];
 
-      // منطق الطقس المضاف: زيادة وقت الرحلة في حال وجود أمطار أو ثلوج
       if (weatherData && ['Rain', 'Snow', 'Thunderstorm'].includes(weatherData.main)) {
         adjustedDurationMin += 15;
         notes.push(`Weather Condition (${weatherData.main}): Expected delays due to bad weather. Added 15 mins.`);
@@ -204,7 +200,7 @@ export class RoutesService {
         destination: dto.destination,
         estimatedDistanceKm: Number(adjustedDistanceKm.toFixed(2)),
         estimatedDurationMin: Math.round(adjustedDurationMin),
-        weather: weatherData, // تم إرجاع حالة الطقس للمستخدم
+        weather: weatherData, 
         metadata,
         affectingCheckpoints: nearbyCheckpoints.map((checkpoint) => ({
           id: checkpoint.id,
@@ -322,7 +318,6 @@ export class RoutesService {
     };
   }
 
-  // --- دوال الـ Providers والمساعدة (تتضمن متطلبات المرحلة 7) ---
 
   private async callRoutingProvider(
     provider: string,
@@ -361,7 +356,7 @@ export class RoutesService {
 
   private async getWeather(lat: number, lon: number) {
     const apiKey = this.configService.get<string>('WEATHER_API_KEY');
-    if (!apiKey) return null; // تجاوز في حال لم يتم إعداد المفتاح
+    if (!apiKey) return null; 
 
     const cacheKey = `${lat.toFixed(2)},${lon.toFixed(2)}`;
     const cached = this.weatherCache.get(cacheKey);
@@ -369,7 +364,6 @@ export class RoutesService {
     const startedAt = Date.now();
     const providerName = 'OpenWeather';
 
-    // التحقق من التخزين المؤقت (Caching)
     if (cached && cached.expiry > Date.now()) {
       await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 200, Date.now() - startedAt, true);
       return cached.data;
@@ -379,7 +373,6 @@ export class RoutesService {
     const url = `${baseUrl}?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
 
     try {
-      // Timeout (5s) + Catch Error (حتى لا يتعطل المسار إذا تعطل الطقس)
       const response = await firstValueFrom(
         this.httpService.get(url).pipe(
           timeout(5000),
@@ -394,7 +387,6 @@ export class RoutesService {
           temp: response.data.main.temp,
         };
         
-        // حفظ في الكاش لمدة 10 دقائق
         this.weatherCache.set(cacheKey, { data: weatherData, expiry: Date.now() + 600000 });
         
         await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 200, Date.now() - startedAt, false);
@@ -403,6 +395,17 @@ export class RoutesService {
       return null;
     } catch (e) {
       await this.logExternalApi(providerName, 'weather', `Weather for ${lat},${lon}`, 500, Date.now() - startedAt, false, (e as any).message);
+       const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+
+      await this.logExternalApi(
+        providerName,
+        'weather',
+        `Weather for ${lat},${lon}`,
+        500,
+        Date.now() - startedAt,
+        false,
+        errorMessage
+      );
       this.logger.error('Weather API failed', e);
       return null;
     }
