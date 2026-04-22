@@ -11,21 +11,6 @@ import { RefreshDto } from './dto/refresh.dto';
 import * as bcrypt from 'bcrypt';
 import { createHash } from 'crypto';
 
-/**
- * SafeUser
- * --------
- * Author: Malak
- *
- * A lightweight user representation used for returning user data
- * without exposing sensitive fields such as password hashes.
- *
- * Fields:
- * - id: Unique user identifier.
- * - fullName: Full name of the user.
- * - email: User email address.
- * - role: Assigned user role.
- * - isActive: Indicates whether the account is active.
- */
 type SafeUser = {
   id: string;
   fullName: string;
@@ -39,34 +24,39 @@ type SafeUser = {
  * -----------
  * Author: Malak
  *
- * Service responsible for handling authentication and user session management.
+ * A service responsible for handling authentication and session-related
+ * operations in the Wasel backend system.
  *
- * This service provides the core business logic for:
+ * This service manages:
  * - User registration
  * - User login
- * - Token generation
- * - Refresh token validation and rotation
- * - User logout
- * - Fetching authenticated user profile
+ * - Access token generation
+ * - Refresh token generation and rotation
+ * - Secure logout
+ * - Returning the currently authenticated user
  *
- * Dependencies:
- * - PrismaService: Handles database operations.
- * - JwtService: Used to generate and verify JWT tokens.
+ * It integrates:
+ * - PrismaService for database access
+ * - JwtService for token signing and verification
+ * - bcrypt for password hashing and verification
+ * - crypto hashing for secure refresh token storage
  *
  * Security Features:
- * - Password hashing using bcrypt.
- * - Refresh token hashing using SHA-256 before database storage.
- * - Refresh token revocation support.
- * - Token expiration handling.
+ * - Passwords are hashed before storage
+ * - Refresh tokens are hashed before being saved in the database
+ * - Refresh tokens can be revoked and rotated
+ * - Expired or invalid refresh tokens are rejected
+ * - Inactive users are denied authentication
  */
 @Injectable()
 export class AuthService {
+
   /**
    * Constructor
    * -----------
-   * Injects required services for authentication operations.
+   * Initializes the AuthService with required dependencies.
    *
-   * @param prisma - Prisma service used for database access
+   * @param prisma - Prisma service used for database operations
    * @param jwtService - JWT service used for signing and verifying tokens
    */
   constructor(
@@ -77,14 +67,11 @@ export class AuthService {
   /**
    * sanitizeUser
    * ------------
-   * Converts a full user object into a safe user object that excludes
-   * sensitive fields such as passwordHash.
+   * Returns a safe user object without exposing sensitive fields
+   * such as password hashes or internal authentication data.
    *
    * @param user - Raw user object retrieved from the database
-   * @returns SafeUser - Sanitized user data suitable for API responses
-   *
-   * Purpose:
-   * - Prevents sensitive internal fields from being exposed to clients.
+   * @returns SafeUser - Sanitized user object safe for API responses
    */
   private sanitizeUser(user: {
     id: string;
@@ -105,13 +92,14 @@ export class AuthService {
   /**
    * hashRefreshToken
    * ----------------
-   * Generates a SHA-256 hash for a refresh token before storing it in the database.
-   *
-   * @param token - Raw refresh token
-   * @returns string - Hashed token value
+   * Hashes a refresh token using SHA-256 before storing it in the database.
    *
    * Purpose:
-   * - Improves security by avoiding storage of raw refresh tokens.
+   * - Prevent raw refresh tokens from being stored directly
+   * - Improve session security in case of database exposure
+   *
+   * @param token - Raw refresh token
+   * @returns string - SHA-256 hashed token
    */
   private hashRefreshToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
@@ -121,17 +109,19 @@ export class AuthService {
    * parseRefreshExpiryToDate
    * ------------------------
    * Converts the refresh token expiration configuration value
-   * into an absolute Date object.
+   * into an absolute expiration Date.
    *
-   * @returns Date - Expiration date for the refresh token
+   * Supported units:
+   * - s = seconds
+   * - m = minutes
+   * - h = hours
+   * - d = days
    *
    * Behavior:
-   * - Reads JWT_REFRESH_EXPIRES_IN from environment variables.
-   * - Supports values with units: s, m, h, d.
-   * - Falls back to 7 days if the value is missing or invalid.
+   * - Reads JWT_REFRESH_EXPIRES_IN from environment variables
+   * - Falls back to 7 days if the value is missing or invalid
    *
-   * Purpose:
-   * - Ensures refresh tokens are stored with an exact expiration timestamp.
+   * @returns Date - Calculated expiration timestamp
    */
   private parseRefreshExpiryToDate(): Date {
     const fallbackMs = 7 * 24 * 60 * 60 * 1000;
@@ -159,25 +149,24 @@ export class AuthService {
   /**
    * generateTokens
    * --------------
-   * Generates both access and refresh JWT tokens for a given user.
+   * Generates a new access token and refresh token for the given user.
    *
-   * @param user - User identity data required to build the token payload
-   * @returns Promise<{ accessToken: string; refreshToken: string }>
+   * Payload includes:
+   * - User ID
+   * - User email
+   * - User role
    *
    * Behavior:
-   * - Reads access and refresh JWT secrets from environment variables.
-   * - Builds a payload containing:
-   *   - sub: user id
-   *   - email: user email
-   *   - role: user role
-   * - Signs an access token with JWT_ACCESS_SECRET.
-   * - Signs a refresh token with JWT_REFRESH_SECRET.
+   * - Reads JWT secrets from environment variables
+   * - Signs an access token using the access secret
+   * - Signs a refresh token using the refresh secret
+   * - Applies configured expiration values
+   *
+   * @param user - User data required for token payload generation
+   * @returns Object containing accessToken and refreshToken
    *
    * Throws:
-   * - Error if JWT secrets are not configured.
-   *
-   * Purpose:
-   * - Centralizes token generation logic in one reusable method.
+   * - Error if JWT secrets are not configured
    */
   private async generateTokens(user: { id: string; email: string; role: string }) {
     const accessSecret = process.env.JWT_ACCESS_SECRET;
@@ -187,22 +176,6 @@ export class AuthService {
       throw new Error('JWT secrets are not configured');
     }
 
-    const accessExpiresIn = (process.env.JWT_ACCESS_EXPIRES_IN ?? '15m') as
-      | number
-      | `${number}ms`
-      | `${number}s`
-      | `${number}m`
-      | `${number}h`
-      | `${number}d`;
-
-    const refreshExpiresIn = (process.env.JWT_REFRESH_EXPIRES_IN ?? '7d') as
-      | number
-      | `${number}ms`
-      | `${number}s`
-      | `${number}m`
-      | `${number}h`
-      | `${number}d`;
-
     const payload = {
       sub: user.id,
       email: user.email,
@@ -211,12 +184,12 @@ export class AuthService {
 
     const accessToken = await this.jwtService.signAsync(payload, {
       secret: accessSecret,
-      expiresIn: accessExpiresIn,
+      expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN ?? '15m') as any,
     });
 
     const refreshToken = await this.jwtService.signAsync(payload, {
       secret: refreshSecret,
-      expiresIn: refreshExpiresIn,
+      expiresIn: (process.env.JWT_REFRESH_EXPIRES_IN ?? '7d') as any,
     });
 
     return { accessToken, refreshToken };
@@ -225,21 +198,21 @@ export class AuthService {
   /**
    * register
    * --------
-   * Creates a new user account and generates authentication tokens.
+   * Creates a new user account and immediately issues authentication tokens.
    *
-   * @param dto - Registration data validated by RegisterDto
-   * @returns Object containing sanitized user data and generated tokens
+   * Process:
+   * 1. Checks whether the email already exists
+   * 2. Hashes the provided password
+   * 3. Creates the user in the database
+   * 4. Generates access and refresh tokens
+   * 5. Stores the hashed refresh token with expiration metadata
+   * 6. Returns the sanitized user and tokens
    *
-   * Behavior:
-   * - Checks whether the email already exists.
-   * - Hashes the provided password using bcrypt.
-   * - Creates a new user record in the database.
-   * - Assigns a default role of 'citizen' if no role is provided.
-   * - Generates access and refresh tokens.
-   * - Stores the hashed refresh token with its expiration date.
+   * @param dto - Registration request data
+   * @returns Object containing user data and issued tokens
    *
    * Throws:
-   * - BadRequestException if the email is already registered.
+   * - BadRequestException if email already exists
    */
   async register(dto: RegisterDto) {
     const existingUser = await this.prisma.user.findUnique({
@@ -281,20 +254,21 @@ export class AuthService {
   /**
    * login
    * -----
-   * Authenticates a user using email and password, then issues new tokens.
+   * Authenticates an existing user using email and password.
    *
-   * @param dto - Login credentials validated by LoginDto
-   * @returns Object containing sanitized user data and generated tokens
+   * Process:
+   * 1. Looks up the user by email
+   * 2. Verifies that the account exists and is active
+   * 3. Compares the provided password with the stored hash
+   * 4. Generates new access and refresh tokens
+   * 5. Stores the hashed refresh token in the database
+   * 6. Returns the sanitized user and tokens
    *
-   * Behavior:
-   * - Retrieves the user by email.
-   * - Verifies that the account exists and is active.
-   * - Compares the provided password with the stored password hash.
-   * - Generates access and refresh tokens.
-   * - Stores the hashed refresh token in the database.
+   * @param dto - Login request data
+   * @returns Object containing user data and issued tokens
    *
    * Throws:
-   * - UnauthorizedException if credentials are invalid.
+   * - UnauthorizedException if credentials are invalid
    */
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
@@ -330,25 +304,24 @@ export class AuthService {
   /**
    * refresh
    * -------
-   * Validates a refresh token and rotates it by issuing a new token pair.
+   * Issues a new access token and refresh token using a valid refresh token.
    *
-   * @param dto - Object containing the refresh token
-   * @returns Object containing new access and refresh tokens
+   * Process:
+   * 1. Verifies the provided refresh token signature
+   * 2. Hashes the token and looks it up in the database
+   * 3. Ensures the token exists, is not revoked, and is not expired
+   * 4. Confirms that the token belongs to the expected user
+   * 5. Generates a new token pair
+   * 6. Revokes the old refresh token
+   * 7. Stores the new hashed refresh token
    *
-   * Behavior:
-   * - Verifies the refresh token using JWT_REFRESH_SECRET.
-   * - Hashes the provided token and looks it up in the database.
-   * - Ensures the token exists, is not revoked, and is not expired.
-   * - Confirms the token belongs to the same user in the JWT payload.
-   * - Generates a new access token and refresh token.
-   * - Revokes the old refresh token.
-   * - Stores the new hashed refresh token.
+   * This implements refresh token rotation for improved security.
+   *
+   * @param dto - Refresh request containing the refresh token
+   * @returns Object containing a new access token and refresh token
    *
    * Throws:
-   * - UnauthorizedException if token validation fails for any reason.
-   *
-   * Security Note:
-   * - Implements refresh token rotation to reduce replay risk.
+   * - UnauthorizedException if token is invalid, missing, revoked, expired, or mismatched
    */
   async refresh(dto: RefreshDto) {
     let payload: { sub: string; email: string; role: string };
@@ -363,7 +336,7 @@ export class AuthService {
 
     const tokenHash = this.hashRefreshToken(dto.refreshToken);
 
-    const storedToken = await this.prisma.refreshToken.findUnique({
+    const storedToken = await this.prisma.refreshToken.findFirst({
       where: { tokenHash },
       include: { user: true },
     });
@@ -410,24 +383,21 @@ export class AuthService {
   /**
    * logout
    * ------
-   * Logs out a user by revoking the provided refresh token.
+   * Revokes a stored refresh token to terminate the user session.
    *
-   * @param dto - Object containing the refresh token
-   * @returns Message indicating logout result
+   * Process:
+   * 1. Hashes the provided refresh token
+   * 2. Looks up the token in the database
+   * 3. If found, marks it as revoked
+   * 4. If not found, returns a safe response without failing
    *
-   * Behavior:
-   * - Hashes the provided refresh token.
-   * - Searches for the matching stored token.
-   * - If found, marks it as revoked.
-   * - If not found, returns a message indicating it was already invalid or removed.
-   *
-   * Purpose:
-   * - Prevents future use of the refresh token after logout.
+   * @param dto - Logout request containing the refresh token
+   * @returns Object containing a logout status message
    */
   async logout(dto: RefreshDto) {
     const tokenHash = this.hashRefreshToken(dto.refreshToken);
 
-    const storedToken = await this.prisma.refreshToken.findUnique({
+    const storedToken = await this.prisma.refreshToken.findFirst({
       where: { tokenHash },
     });
 
@@ -448,18 +418,18 @@ export class AuthService {
   /**
    * me
    * --
-   * Retrieves the profile of the currently authenticated user.
+   * Returns the currently authenticated user's safe profile information.
    *
-   * @param userId - Unique identifier of the authenticated user
-   * @returns SafeUser - Sanitized user profile
+   * Process:
+   * 1. Looks up the user by ID
+   * 2. Ensures the user exists and is active
+   * 3. Returns the sanitized user object
    *
-   * Behavior:
-   * - Looks up the user by id.
-   * - Ensures the account exists and is active.
-   * - Returns safe user information only.
+   * @param userId - Authenticated user's ID
+   * @returns SafeUser - Sanitized current user data
    *
    * Throws:
-   * - UnauthorizedException if the user does not exist or is inactive.
+   * - UnauthorizedException if the user does not exist or is inactive
    */
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({

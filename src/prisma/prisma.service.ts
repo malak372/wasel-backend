@@ -1,91 +1,45 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
-import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
 
 /**
  * PrismaService
  * -------------
  * Author: All Team Members
  *
- * Service responsible for managing database connectivity using Prisma ORM.
+ * A centralized database service that extends PrismaClient
+ * and integrates it with the NestJS application lifecycle.
  *
- * This service extends PrismaClient and integrates a PostgreSQL connection
- * pool using the PrismaPg adapter. It ensures efficient database access
- * and proper lifecycle management within the NestJS application.
+ * This service is responsible for:
+ * - Establishing a connection to the database when the application starts
+ * - Gracefully closing the connection when the application shuts down
+ * - Providing a shared Prisma client instance across the application
  *
  * Responsibilities:
- * - Initializes Prisma Client with a PostgreSQL adapter.
- * - Manages database connection pooling.
- * - Handles application lifecycle hooks (startup and shutdown).
- * - Provides a single shared database connection across the application.
+ * - Acts as a single source of truth for database access
+ * - Enables dependency injection of Prisma into other services and resolvers
+ * - Manages connection lifecycle automatically
  *
- * Dependencies:
- * - ConfigService: Used to retrieve environment variables.
- * - PrismaClient: ORM for database operations.
- * - pg Pool: Handles PostgreSQL connection pooling.
- * - PrismaPg: Adapter connecting Prisma to pg Pool.
+ * Lifecycle Hooks:
+ * - onModuleInit: Called when the module is initialized
+ * - onModuleDestroy: Called when the application is shutting down
  *
  * Notes:
- * - Uses SSL configuration for secure database connections.
- * - Prevents multiple Prisma instances by centralizing access.
- * - Ensures clean shutdown of database connections.
+ * - Extends PrismaClient to expose all Prisma query methods
+ * - Used across services (Auth, Reports, Routes, etc.)
+ * - Ensures efficient connection handling in NestJS environment
  */
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
-
-  /**
-   * pool
-   * ----
-   * PostgreSQL connection pool instance.
-   *
-   * Used to manage multiple database connections efficiently.
-   */
-  private readonly pool: Pool;
-
-  /**
-   * Constructor
-   * -----------
-   * Initializes PrismaClient with a PostgreSQL adapter and connection pool.
-   *
-   * @param configService - Service used to access environment variables
-   *
-   * Behavior:
-   * - Retrieves DATABASE_URL from environment variables.
-   * - Throws an error if DATABASE_URL is not defined.
-   * - Creates a PostgreSQL connection pool.
-   * - Initializes PrismaPg adapter using the pool.
-   * - Passes the adapter to PrismaClient.
-   */
-  constructor(private readonly configService: ConfigService) {
-    const databaseUrl = configService.get<string>('DATABASE_URL');
-
-    if (!databaseUrl) {
-      throw new Error('DATABASE_URL is not set');
-    }
-
-    const pool = new Pool({
-      connectionString: databaseUrl,
-      ssl: { rejectUnauthorized: false },
-    });
-
-    const adapter = new PrismaPg(pool);
-    super({ adapter });
-
-    this.pool = pool;
-  }
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
 
   /**
    * onModuleInit
    * ------------
-   * Lifecycle hook triggered when the module is initialized.
+   * Establishes a database connection when the module initializes.
    *
-   * Behavior:
-   * - Establishes a connection to the database.
-   *
-   * Purpose:
-   * - Ensures the database is ready before handling requests.
+   * Called automatically by NestJS during application startup.
    */
   async onModuleInit() {
     await this.$connect();
@@ -93,19 +47,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   /**
    * onModuleDestroy
-   * ---------------
-   * Lifecycle hook triggered when the application is shutting down.
+   * ----------------
+   * Closes the database connection when the module is destroyed.
    *
-   * Behavior:
-   * - Disconnects Prisma client from the database.
-   * - Closes the PostgreSQL connection pool.
-   *
-   * Purpose:
-   * - Prevents memory leaks and open connections.
-   * - Ensures graceful shutdown of the application.
+   * Called automatically by NestJS during application shutdown.
    */
   async onModuleDestroy() {
     await this.$disconnect();
-    await this.pool.end();
   }
 }

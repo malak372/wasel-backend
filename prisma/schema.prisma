@@ -1,6 +1,7 @@
 /**
  * Prisma Schema
  * -------------
+ * Project: Wasel Backend
  * Author: All Team Members
  * This schema defines the complete database structure for the system.
  * It includes:
@@ -23,6 +24,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 /**
@@ -34,17 +36,13 @@ datasource db {
  * - moderator: Role responsible for moderation actions
  * - admin: Role with full administrative access
  */
+
 enum UserRole {
   citizen
   moderator
   admin
 }
 
-/**
- * CheckpointStatus
- * ----------------
- * Defines the possible status values for checkpoints.
- */
 enum CheckpointStatus {
   open
   delayed
@@ -52,11 +50,6 @@ enum CheckpointStatus {
   unknown
 }
 
-/**
- * IncidentSeverity
- * ----------------
- * Defines the severity level of incidents.
- */
 enum IncidentSeverity {
   low
   medium
@@ -64,11 +57,6 @@ enum IncidentSeverity {
   critical
 }
 
-/**
- * IncidentStatus
- * --------------
- * Defines the lifecycle states of incidents.
- */
 enum IncidentStatus {
   open
   verified
@@ -76,22 +64,12 @@ enum IncidentStatus {
   rejected
 }
 
-/**
- * IncidentSourceType
- * ------------------
- * Defines the source from which an incident originated.
- */
 enum IncidentSourceType {
   official
   crowd
   external_api
 }
 
-/**
- * ReportStatus
- * ------------
- * Defines the lifecycle states of citizen reports.
- */
 enum ReportStatus {
   pending
   approved
@@ -99,31 +77,16 @@ enum ReportStatus {
   merged
 }
 
-/**
- * VoteType
- * --------
- * Defines the allowed vote actions on reports.
- */
 enum VoteType {
   confirm
   deny
 }
 
-/**
- * ModerationTargetType
- * --------------------
- * Defines the type of object affected by a moderation action.
- */
 enum ModerationTargetType {
   report
   incident
 }
 
-/**
- * ModerationActionType
- * --------------------
- * Defines the moderation operations supported by the system.
- */
 enum ModerationActionType {
   approve
   reject
@@ -133,11 +96,6 @@ enum ModerationActionType {
   flag
 }
 
-/**
- * RegionType
- * ----------
- * Defines the classification of a geographic region.
- */
 enum RegionType {
   city
   village
@@ -145,11 +103,6 @@ enum RegionType {
   area
 }
 
-/**
- * AlertDeliveryStatus
- * -------------------
- * Defines the delivery state of alerts.
- */
 enum AlertDeliveryStatus {
   pending
   sent
@@ -258,8 +211,9 @@ model Checkpoint {
  * -----------------------
  * Stores status changes for checkpoints.
  * Purpose:
- * - Provides an audit trail for checkpoint updates
- * - Records who changed the status and when
+ * - Track how checkpoint status changes over time
+ * - Record who made the change when available
+ * - Support auditing and timeline analysis
  */
 model CheckpointStatusHistory {
   id              String           @id @default(uuid())
@@ -282,9 +236,12 @@ model CheckpointStatusHistory {
  * ----------------
  * Defines report and incident categories.
  * Examples:
- * - accident
  * - closure
  * - delay
+ * - accident
+ * - weather_hazard
+ * - military_activity
+ * - road_damage
  */
 model IncidentCategory {
   id                 String              @id @default(uuid())
@@ -355,9 +312,9 @@ model Incident {
  * ---------------------
  * Stores incident status transitions over time.
  * Purpose:
- * - Maintains audit history
- * - Records old and new status values
- * - Tracks who made the change
+ * - Preserve audit trail of incident status changes
+ * - Record old and new status values
+ * - Track change reason and responsible user
  */
 model IncidentStatusHistory {
   id              String         @id @default(uuid())
@@ -427,8 +384,11 @@ model CitizenReport {
  * Rules:
  * - One user can vote only once per report
  * Purpose:
- * - Supports crowd-based validation
- * - Contributes to confidence score calculation
+ * - Support report confirmation or denial
+ * - Help estimate confidence and credibility of crowd reports
+ *
+ * Constraint:
+ * - A user can vote only once per report
  */
 model ReportVote {
   id        String        @id @default(uuid())
@@ -449,8 +409,7 @@ model ReportVote {
  * ----------------
  * Represents moderation actions performed by moderators or admins.
  * Purpose:
- * - Tracks moderation events for auditability
- * - Stores target type, action type, and reason
+ * - Maintain moderation audit history
  */
 model ModerationAction {
   id              String               @id @default(uuid())
@@ -530,7 +489,12 @@ model Alert {
  * Includes:
  * - Origin and destination names and coordinates
  * - Estimated distance and duration
- * - Avoidance preferences and route metadata in JSON format
+ * - Avoidance preferences
+ * - Route metadata
+ * - Creator reference
+ *
+ * Purpose:
+ * - Persist route calculations for later retrieval and analysis
  */
 model Route {
   id                   String   @id @default(uuid())
@@ -558,8 +522,7 @@ model Route {
  * --------------
  * Stores logs for requests made to external APIs.
  * Purpose:
- * - Supports monitoring and debugging of integrations
- * - Captures endpoint, response status, timing, and errors
+ * - Support monitoring, debugging, and integration auditing
  */
 model ExternalApiLog {
   id             String   @id @default(uuid())
@@ -585,7 +548,9 @@ model ExternalApiLog {
  * - Token values are stored as hashes
  * - Supports expiration and revocation
  * Purpose:
- * - Enables secure refresh-token-based session handling
+ * - Support secure token refresh workflow
+ * - Track token expiration and revocation
+ * - Improve session management security
  */
 model RefreshToken {
   id        String    @id @default(uuid())
