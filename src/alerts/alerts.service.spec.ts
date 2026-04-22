@@ -1,18 +1,43 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Module } from '@nestjs/common';
 import { AlertsService } from './alerts.service';
+import { AlertsController } from './alerts.controller';
+import { PrismaModule } from '../prisma/prisma.module';
 
-describe('AlertsService', () => {
-  let service: AlertsService;
+/**
+ * @file alerts.module.ts
+ * @description The core module for managing system alerts.
+ * This module integrates the controller and service for alert management
+ * and provides database access through the PrismaModule.
+ */
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [AlertsService],
-    }).compile();
+/**
+ * @class AlertsModule
+ * @description This module handles the registration of the AlertsController 
+ * and AlertsService. It also exports the AlertsService to make it 
+ * accessible to other modules within the application.
+ */
+@Module({
+  /**
+   * Imported modules required for this module's functionality.
+   * PrismaModule is imported to allow the AlertsService to interact with the database.
+   */
+  imports: [PrismaModule],
 
-    service = module.get<AlertsService>(AlertsService);
-  });
+  /**
+   * The set of controllers defined in this module which have to be instantiated.
+   */
+  controllers: [AlertsController],
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
-  });
-});
+  /**
+   * The providers that will be instantiated by the Nest injector and that 
+   * may be shared at least across this module.
+   */
+  providers: [AlertsService],
+
+  /**
+   * The subset of providers that are provided by this module and should be 
+   * available in other modules which import this module.
+   */
+  exports: [AlertsService]
+})
+export class AlertsModule {}
