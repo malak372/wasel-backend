@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CheckpointsController } from './checkpoints.controller';
 import { CheckpointsService } from './checkpoints.service';
+import { CheckpointsResolver } from './checkpoints.resolver';
 
 /**
  * CheckpointsModule
@@ -30,7 +31,7 @@ import { CheckpointsService } from './checkpoints.service';
  */
 @Module({
   controllers: [CheckpointsController],
-  providers: [CheckpointsService],
+  providers: [CheckpointsService,CheckpointsResolver],
   exports: [CheckpointsService],
 })
 export class CheckpointsModule {}

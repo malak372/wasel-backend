@@ -1,25 +1,44 @@
 /**
  * Prisma Schema
  * -------------
+ * Project: Wasel Backend
  * Author: All Team Members
  *
- * This schema defines the complete database structure for the system.
+ * This Prisma schema defines the database structure for the Wasel system.
+ * It models the core entities, enums, and relationships required to support
+ * authentication, checkpoint tracking, incident reporting, citizen reports,
+ * alert subscriptions, route storage, moderation workflows, and audit history.
  *
- * It includes:
- * - Core entities such as users, incidents, reports, routes, and alerts
- * - Enum definitions for controlled values
- * - Relationships between models
- * - Indexes and constraints for performance and data integrity
+ * Responsibilities:
+ * - Define the PostgreSQL datasource connection
+ * - Configure the Prisma client generator
+ * - Declare all application enums used across the system
+ * - Define database models, fields, relations, indexes, and constraints
+ * - Map Prisma model fields to database table and column names
  *
- * Database Provider:
- * - PostgreSQL
+ * Main Functional Areas:
+ * - User authentication and refresh token management
+ * - Regional hierarchy and geographic organization
+ * - Checkpoint management and checkpoint status history
+ * - Incident creation, verification, closure, and status history
+ * - Citizen reporting, duplicate tracking, and voting
+ * - Moderation and audit trail recording
+ * - Alert subscriptions and alert delivery records
+ * - Route persistence and metadata storage
+ * - External API request logging
  *
- * ORM:
- * - Prisma Client
+ * Design Goals:
+ * - Maintain clear entity relationships across all modules
+ * - Support auditability through history and moderation tables
+ * - Preserve normalized database design where appropriate
+ * - Improve query performance using indexes on frequently filtered fields
+ * - Keep database naming consistent using explicit @map and @@map mappings
  *
- * Purpose:
- * - Acts as the single source of truth for the database design
- * - Enables type-safe database access through Prisma Client
+ * Notes:
+ * - PostgreSQL is used as the primary database provider
+ * - UUIDs are used as primary keys for most entities
+ * - Enums are used to enforce valid system states and classifications
+ * - Timestamps are included across major entities for tracking and auditing
  */
 
 generator client {
@@ -28,29 +47,26 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 /**
- * UserRole
- * --------
- * Defines the available roles in the system.
+ * Enums
+ * -----
+ * These enums define the fixed set of values used across the system.
  *
- * Values:
- * - citizen: Standard user role
- * - moderator: Role responsible for moderation actions
- * - admin: Role with full administrative access
+ * Purpose:
+ * - Restrict invalid values at the database level
+ * - Keep application logic and database states consistent
+ * - Simplify validation and filtering in backend services
  */
+
 enum UserRole {
   citizen
   moderator
   admin
 }
 
-/**
- * CheckpointStatus
- * ----------------
- * Defines the possible status values for checkpoints.
- */
 enum CheckpointStatus {
   open
   delayed
@@ -58,11 +74,6 @@ enum CheckpointStatus {
   unknown
 }
 
-/**
- * IncidentSeverity
- * ----------------
- * Defines the severity level of incidents.
- */
 enum IncidentSeverity {
   low
   medium
@@ -70,11 +81,6 @@ enum IncidentSeverity {
   critical
 }
 
-/**
- * IncidentStatus
- * --------------
- * Defines the lifecycle states of incidents.
- */
 enum IncidentStatus {
   open
   verified
@@ -82,22 +88,12 @@ enum IncidentStatus {
   rejected
 }
 
-/**
- * IncidentSourceType
- * ------------------
- * Defines the source from which an incident originated.
- */
 enum IncidentSourceType {
   official
   crowd
   external_api
 }
 
-/**
- * ReportStatus
- * ------------
- * Defines the lifecycle states of citizen reports.
- */
 enum ReportStatus {
   pending
   approved
@@ -105,31 +101,16 @@ enum ReportStatus {
   merged
 }
 
-/**
- * VoteType
- * --------
- * Defines the allowed vote actions on reports.
- */
 enum VoteType {
   confirm
   deny
 }
 
-/**
- * ModerationTargetType
- * --------------------
- * Defines the type of object affected by a moderation action.
- */
 enum ModerationTargetType {
   report
   incident
 }
 
-/**
- * ModerationActionType
- * --------------------
- * Defines the moderation operations supported by the system.
- */
 enum ModerationActionType {
   approve
   reject
@@ -139,11 +120,6 @@ enum ModerationActionType {
   flag
 }
 
-/**
- * RegionType
- * ----------
- * Defines the classification of a geographic region.
- */
 enum RegionType {
   city
   village
@@ -151,11 +127,6 @@ enum RegionType {
   area
 }
 
-/**
- * AlertDeliveryStatus
- * -------------------
- * Defines the delivery state of alerts.
- */
 enum AlertDeliveryStatus {
   pending
   sent
@@ -165,18 +136,20 @@ enum AlertDeliveryStatus {
 /**
  * User
  * ----
- * Represents system users.
+ * Represents a system user account.
  *
- * Responsibilities:
- * - Owns reports
- * - Casts votes
- * - Performs moderation actions
- * - Can be linked to incidents and routes
+ * Supports:
+ * - Authentication and authorization
+ * - Role-based access control
+ * - Report submission
+ * - Incident reporting and verification
+ * - Route creation
+ * - Alert subscription ownership
  *
- * Notes:
- * - Email is unique
- * - Password is stored as a hash
- * - isActive controls account availability
+ * Roles:
+ * - citizen
+ * - moderator
+ * - admin
  */
 model User {
   id                      String                    @id @default(uuid())
@@ -205,11 +178,17 @@ model User {
 /**
  * Region
  * ------
- * Represents geographical areas in the system.
+ * Represents a geographic area in the system.
  *
- * Features:
- * - Supports hierarchical regions using self-relation
- * - Connects incidents, checkpoints, reports, and subscriptions to locations
+ * Purpose:
+ * - Organize checkpoints, incidents, reports, and subscriptions
+ * - Support hierarchical region structure using parent-child relations
+ *
+ * Examples:
+ * - Governorate
+ * - City
+ * - Village
+ * - Area
  */
 model Region {
   id                 String              @id @default(uuid())
@@ -231,18 +210,14 @@ model Region {
 /**
  * Checkpoint
  * ----------
- * Represents a physical checkpoint.
+ * Represents a physical checkpoint location tracked by the system.
  *
- * Fields include:
- * - Name
- * - Geographic coordinates
- * - Region association
+ * Stores:
+ * - Name and coordinates
+ * - Assigned region
  * - Current operational status
- *
- * Relationships:
- * - Belongs to a region
- * - Has incident links
- * - Maintains a status history log
+ * - Related incidents
+ * - Status history records
  */
 model Checkpoint {
   id            String                    @id @default(uuid())
@@ -267,11 +242,12 @@ model Checkpoint {
 /**
  * CheckpointStatusHistory
  * -----------------------
- * Stores status changes for checkpoints.
+ * Stores historical changes for checkpoint statuses.
  *
  * Purpose:
- * - Provides an audit trail for checkpoint updates
- * - Records who changed the status and when
+ * - Track how checkpoint status changes over time
+ * - Record who made the change when available
+ * - Support auditing and timeline analysis
  */
 model CheckpointStatusHistory {
   id              String           @id @default(uuid())
@@ -292,12 +268,15 @@ model CheckpointStatusHistory {
 /**
  * IncidentCategory
  * ----------------
- * Defines report and incident categories.
+ * Defines supported incident classification types.
  *
  * Examples:
- * - accident
  * - closure
  * - delay
+ * - accident
+ * - weather_hazard
+ * - military_activity
+ * - road_damage
  */
 model IncidentCategory {
   id                 String              @id @default(uuid())
@@ -313,13 +292,19 @@ model IncidentCategory {
 /**
  * Incident
  * --------
- * Represents an incident in the system.
+ * Represents a road, checkpoint, or mobility-related incident.
  *
- * Features:
- * - Supports severity and lifecycle status
- * - Can be linked to a checkpoint or region
- * - Maintains who reported, verified, or closed it
- * - Connects with citizen reports and alerts
+ * Stores:
+ * - Title and description
+ * - Category, severity, and status
+ * - Source type
+ * - Optional checkpoint and region linkage
+ * - Geographic coordinates
+ * - Reporting, verification, and closure metadata
+ *
+ * Purpose:
+ * - Track real-world events affecting mobility
+ * - Support moderation and lifecycle transitions
  */
 model Incident {
   id               String                  @id @default(uuid())
@@ -367,12 +352,12 @@ model Incident {
 /**
  * IncidentStatusHistory
  * ---------------------
- * Stores incident status transitions over time.
+ * Stores lifecycle transitions for incidents.
  *
  * Purpose:
- * - Maintains audit history
- * - Records old and new status values
- * - Tracks who made the change
+ * - Preserve audit trail of incident status changes
+ * - Record old and new status values
+ * - Track change reason and responsible user
  */
 model IncidentStatusHistory {
   id              String         @id @default(uuid())
@@ -394,14 +379,18 @@ model IncidentStatusHistory {
 /**
  * CitizenReport
  * -------------
- * Represents reports submitted by users.
+ * Represents a report submitted by a citizen about a road or traffic issue.
  *
- * Features:
- * - Linked to categories and optional incidents
- * - Supports coordinates or region-based location
- * - Maintains lifecycle status
- * - Supports duplicate detection using self-relation
- * - Stores confidence score
+ * Stores:
+ * - Reporter information
+ * - Category and optional linked incident
+ * - Description and coordinates
+ * - Region, report time, and moderation status
+ * - Duplicate linkage and confidence score
+ *
+ * Purpose:
+ * - Support crowd-sourced reporting
+ * - Enable moderation, merging, and validation workflows
  */
 model CitizenReport {
   id                  String           @id @default(uuid())
@@ -439,14 +428,14 @@ model CitizenReport {
 /**
  * ReportVote
  * ----------
- * Represents a user vote on a report.
- *
- * Rules:
- * - One user can vote only once per report
+ * Represents a citizen vote on a submitted report.
  *
  * Purpose:
- * - Supports crowd-based validation
- * - Contributes to confidence score calculation
+ * - Support report confirmation or denial
+ * - Help estimate confidence and credibility of crowd reports
+ *
+ * Constraint:
+ * - A user can vote only once per report
  */
 model ReportVote {
   id        String        @id @default(uuid())
@@ -465,11 +454,22 @@ model ReportVote {
 /**
  * ModerationAction
  * ----------------
- * Represents moderation actions performed by moderators or admins.
+ * Represents an action performed by a moderator on a target entity.
+ *
+ * Targets:
+ * - report
+ * - incident
+ *
+ * Actions:
+ * - approve
+ * - reject
+ * - verify
+ * - close
+ * - merge
+ * - flag
  *
  * Purpose:
- * - Tracks moderation events for auditability
- * - Stores target type, action type, and reason
+ * - Maintain moderation audit history
  */
 model ModerationAction {
   id              String               @id @default(uuid())
@@ -490,13 +490,12 @@ model ModerationAction {
 /**
  * AlertSubscription
  * -----------------
- * Represents a user's alert subscription preferences.
+ * Represents a user's alert preference.
  *
- * Supports:
- * - Region-based subscriptions
- * - Category-based subscriptions
- *
- * Includes a uniqueness constraint to prevent duplicate subscriptions.
+ * Purpose:
+ * - Allow users to subscribe to incident notifications
+ * - Filter alerts by region and category
+ * - Track whether the subscription is active
  */
 model AlertSubscription {
   id         String            @id @default(uuid())
@@ -521,12 +520,15 @@ model AlertSubscription {
 /**
  * Alert
  * -----
- * Represents a delivered or pending notification related to an incident.
+ * Represents a generated alert linked to an incident and a subscription.
  *
- * Features:
- * - Linked to an incident
- * - Linked to a user subscription
- * - Tracks delivery status and sent time
+ * Stores:
+ * - Alert message
+ * - Delivery status
+ * - Creation and send timestamps
+ *
+ * Purpose:
+ * - Track alert generation and delivery workflow
  */
 model Alert {
   id             String              @id @default(uuid())
@@ -548,12 +550,17 @@ model Alert {
 /**
  * Route
  * -----
- * Represents a saved route estimation between two points.
+ * Represents a saved route estimation request or result.
  *
- * Includes:
+ * Stores:
  * - Origin and destination names and coordinates
  * - Estimated distance and duration
- * - Avoidance preferences and route metadata in JSON format
+ * - Avoidance preferences
+ * - Route metadata
+ * - Creator reference
+ *
+ * Purpose:
+ * - Persist route calculations for later retrieval and analysis
  */
 model Route {
   id                   String   @id @default(uuid())
@@ -579,11 +586,14 @@ model Route {
 /**
  * ExternalApiLog
  * --------------
- * Stores logs for requests made to external APIs.
+ * Stores logs for third-party API requests made by the system.
+ *
+ * Examples:
+ * - Routing API requests
+ * - Weather API requests
  *
  * Purpose:
- * - Supports monitoring and debugging of integrations
- * - Captures endpoint, response status, timing, and errors
+ * - Support monitoring, debugging, and integration auditing
  */
 model ExternalApiLog {
   id             String   @id @default(uuid())
@@ -604,14 +614,12 @@ model ExternalApiLog {
 /**
  * RefreshToken
  * ------------
- * Stores refresh tokens used for authentication.
- *
- * Security:
- * - Token values are stored as hashes
- * - Supports expiration and revocation
+ * Stores hashed refresh tokens for authenticated users.
  *
  * Purpose:
- * - Enables secure refresh-token-based session handling
+ * - Support secure token refresh workflow
+ * - Track token expiration and revocation
+ * - Improve session management security
  */
 model RefreshToken {
   id         String    @id @default(uuid())
@@ -627,76 +635,4 @@ model RefreshToken {
   @@index([expiresAt])
   @@index([revokedAt])
   @@map("refresh_tokens")
-}
-
-enum UserRole {
-  citizen
-  moderator
-  admin
-}
-
-enum CheckpointStatus {
-  open
-  delayed
-  closed
-  unknown
-}
-
-enum IncidentSeverity {
-  low
-  medium
-  high
-  critical
-}
-
-enum IncidentStatus {
-  open
-  verified
-  closed
-  rejected
-}
-
-enum IncidentSourceType {
-  official
-  crowd
-  external_api
-}
-
-enum ReportStatus {
-  pending
-  approved
-  rejected
-  merged
-}
-
-enum VoteType {
-  confirm
-  deny
-}
-
-enum ModerationTargetType {
-  report
-  incident
-}
-
-enum ModerationActionType {
-  approve
-  reject
-  verify
-  close
-  merge
-  flag
-}
-
-enum RegionType {
-  city
-  village
-  governorate
-  area
-}
-
-enum AlertDeliveryStatus {
-  pending
-  sent
-  failed
 }

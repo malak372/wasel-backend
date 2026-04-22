@@ -61,6 +61,7 @@ export class AlertSubscriptionsService {
       },
     });
   }
+  
 
   /**
    * Updates an existing alert subscription.
@@ -101,4 +102,4 @@ export class AlertSubscriptionsService {
       where: { id },
     });
   }
-}
+  }

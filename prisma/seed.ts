@@ -60,7 +60,7 @@ const adapter = new PrismaPg(pool);
 /**
  * Prisma client instance used for all database operations in this script.
  */
-const prisma = new PrismaClient({ adapter });
+const prisma = new PrismaClient();
 
 /**
  * hashPassword
