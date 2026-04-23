@@ -2,7 +2,7 @@
  * Prisma Schema
  * -------------
  * Project: Wasel Backend
- * Author: All Team Members
+ * Author: Malak
  * This schema defines the complete database structure for the system.
  * It includes:
  * - Core entities such as users, incidents, reports, routes, and alerts
