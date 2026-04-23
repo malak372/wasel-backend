@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 /**
  * PrismaService
  * -------------
- * Author: All Team Members
+ * Author: Malak
  *
  * A centralized database service that extends PrismaClient
  * and integrates it with the NestJS application lifecycle.
