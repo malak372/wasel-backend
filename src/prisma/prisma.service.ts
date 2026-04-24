@@ -7,7 +7,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     super({
-      // هذا هو الاسم الصحيح للخاصية في Prisma 7
       datasourceUrl: process.env.DATABASE_URL,
     });
   }
