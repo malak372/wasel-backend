@@ -22,20 +22,13 @@ generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-/**
- * UserRole
- * --------
- * Defines the available roles in the system.
- * Values:
- * - citizen: Standard user role
- * - moderator: Role responsible for moderation actions
- * - admin: Role with full administrative access
- */
+/// UserRole
+/// --------
+/// Defines the available roles in the system.
+/// Values:
+/// - citizen: Standard user role
+/// - moderator: Role responsible for moderation actions
+/// - admin: Role with full administrative access
 
 enum UserRole {
   citizen
@@ -109,20 +102,18 @@ enum AlertDeliveryStatus {
   failed
 }
 
-/**
- * User
- * ----
- * Represents system users.
- * Responsibilities:
- * - Owns reports
- * - Casts votes
- * - Performs moderation actions
- * - Can be linked to incidents and routes
- * Notes:
- * - Email is unique
- * - Password is stored as a hash
- * - isActive controls account availability
- */
+/// User
+/// ----
+/// Represents system users.
+/// Responsibilities:
+/// - Owns reports
+/// - Casts votes
+/// - Performs moderation actions
+/// - Can be linked to incidents and routes
+/// Notes:
+/// - Email is unique
+/// - Password is stored as a hash
+/// - isActive controls account availability
 model User {
   id                      String                    @id @default(uuid())
   fullName                String                    @map("full_name")
@@ -147,14 +138,12 @@ model User {
   @@map("users")
 }
 
-/**
- * Region
- * ------
- * Represents geographical areas in the system.
- * Features:
- * - Supports hierarchical regions using self-relation
- * - Connects incidents, checkpoints, reports, and subscriptions to locations
- */
+/// Region
+/// ------
+/// Represents geographical areas in the system.
+/// Features:
+/// - Supports hierarchical regions using self-relation
+/// - Connects incidents, checkpoints, reports, and subscriptions to locations
 model Region {
   id                 String              @id @default(uuid())
   name               String
@@ -172,20 +161,18 @@ model Region {
   @@map("regions")
 }
 
-/**
- * Checkpoint
- * ----------
- * Represents a physical checkpoint.
- * Fields include:
- * - Name
- * - Geographic coordinates
- * - Region association
- * - Current operational status
- * Relationships:
- * - Belongs to a region
- * - Has incident links
- * - Maintains a status history log
- */
+/// Checkpoint
+/// ----------
+/// Represents a physical checkpoint.
+/// Fields include:
+/// - Name
+/// - Geographic coordinates
+/// - Region association
+/// - Current operational status
+/// Relationships:
+/// - Belongs to a region
+/// - Has incident links
+/// - Maintains a status history log
 model Checkpoint {
   id            String                    @id @default(uuid())
   name          String
@@ -206,15 +193,13 @@ model Checkpoint {
   @@map("checkpoints")
 }
 
-/**
- * CheckpointStatusHistory
- * -----------------------
- * Stores status changes for checkpoints.
- * Purpose:
- * - Track how checkpoint status changes over time
- * - Record who made the change when available
- * - Support auditing and timeline analysis
- */
+/// CheckpointStatusHistory
+/// -----------------------
+/// Stores status changes for checkpoints.
+/// Purpose:
+/// - Track how checkpoint status changes over time
+/// - Record who made the change when available
+/// - Support auditing and timeline analysis
 model CheckpointStatusHistory {
   id              String           @id @default(uuid())
   checkpointId    String           @map("checkpoint_id")
@@ -231,18 +216,16 @@ model CheckpointStatusHistory {
   @@map("checkpoint_status_history")
 }
 
-/**
- * IncidentCategory
- * ----------------
- * Defines report and incident categories.
- * Examples:
- * - closure
- * - delay
- * - accident
- * - weather_hazard
- * - military_activity
- * - road_damage
- */
+/// IncidentCategory
+/// ----------------
+/// Defines report and incident categories.
+/// Examples:
+/// - closure
+/// - delay
+/// - accident
+/// - weather_hazard
+/// - military_activity
+/// - road_damage
 model IncidentCategory {
   id                 String              @id @default(uuid())
   name               String              @unique
@@ -254,16 +237,14 @@ model IncidentCategory {
   @@map("incident_categories")
 }
 
-/**
- * Incident
- * --------
- * Represents an incident in the system.
- * Features:
- * - Supports severity and lifecycle status
- * - Can be linked to a checkpoint or region
- * - Maintains who reported, verified, or closed it
- * - Connects with citizen reports and alerts
- */
+/// Incident
+/// --------
+/// Represents an incident in the system.
+/// Features:
+/// - Supports severity and lifecycle status
+/// - Can be linked to a checkpoint or region
+/// - Maintains who reported, verified, or closed it
+/// - Connects with citizen reports and alerts
 model Incident {
   id               String                  @id @default(uuid())
   title            String
@@ -307,15 +288,13 @@ model Incident {
   @@map("incidents")
 }
 
-/**
- * IncidentStatusHistory
- * ---------------------
- * Stores incident status transitions over time.
- * Purpose:
- * - Preserve audit trail of incident status changes
- * - Record old and new status values
- * - Track change reason and responsible user
- */
+/// IncidentStatusHistory
+/// ---------------------
+/// Stores incident status transitions over time.
+/// Purpose:
+/// - Preserve audit trail of incident status changes
+/// - Record old and new status values
+/// - Track change reason and responsible user
 model IncidentStatusHistory {
   id              String         @id @default(uuid())
   incidentId      String         @map("incident_id")
@@ -333,17 +312,15 @@ model IncidentStatusHistory {
   @@map("incident_status_history")
 }
 
-/**
- * CitizenReport
- * -------------
- * Represents reports submitted by users.
- * Features:
- * - Linked to categories and optional incidents
- * - Supports coordinates or region-based location
- * - Maintains lifecycle status
- * - Supports duplicate detection using self-relation
- * - Stores confidence score
- */
+/// CitizenReport
+/// -------------
+/// Represents reports submitted by users.
+/// Features:
+/// - Linked to categories and optional incidents
+/// - Supports coordinates or region-based location
+/// - Maintains lifecycle status
+/// - Supports duplicate detection using self-relation
+/// - Stores confidence score
 model CitizenReport {
   id                  String           @id @default(uuid())
   userId              String?          @map("user_id")
@@ -377,19 +354,17 @@ model CitizenReport {
   @@map("citizen_reports")
 }
 
-/**
- * ReportVote
- * ----------
- * Represents a user vote on a report.
- * Rules:
- * - One user can vote only once per report
- * Purpose:
- * - Support report confirmation or denial
- * - Help estimate confidence and credibility of crowd reports
- *
- * Constraint:
- * - A user can vote only once per report
- */
+/// ReportVote
+/// ----------
+/// Represents a user vote on a report.
+/// Rules:
+/// - One user can vote only once per report
+/// Purpose:
+/// - Support report confirmation or denial
+/// - Help estimate confidence and credibility of crowd reports
+///
+/// Constraint:
+/// - A user can vote only once per report
 model ReportVote {
   id        String        @id @default(uuid())
   reportId  String        @map("report_id")
@@ -404,13 +379,11 @@ model ReportVote {
   @@map("report_votes")
 }
 
-/**
- * ModerationAction
- * ----------------
- * Represents moderation actions performed by moderators or admins.
- * Purpose:
- * - Maintain moderation audit history
- */
+/// ModerationAction
+/// ----------------
+/// Represents moderation actions performed by moderators or admins.
+/// Purpose:
+/// - Maintain moderation audit history
 model ModerationAction {
   id              String               @id @default(uuid())
   targetType      ModerationTargetType @map("target_type")
@@ -427,15 +400,13 @@ model ModerationAction {
   @@map("moderation_actions")
 }
 
-/**
- * AlertSubscription
- * -----------------
- * Represents a user's alert subscription preferences.
- * Supports:
- * - Region-based subscriptions
- * - Category-based subscriptions
- * Includes a uniqueness constraint to prevent duplicate subscriptions.
- */
+/// AlertSubscription
+/// -----------------
+/// Represents a user's alert subscription preferences.
+/// Supports:
+/// - Region-based subscriptions
+/// - Category-based subscriptions
+/// Includes a uniqueness constraint to prevent duplicate subscriptions.
 model AlertSubscription {
   id         String            @id @default(uuid())
   userId     String            @map("user_id")
@@ -456,15 +427,13 @@ model AlertSubscription {
   @@map("alert_subscriptions")
 }
 
-/**
- * Alert
- * -----
- * Represents a delivered or pending notification related to an incident.
- * Features:
- * - Linked to an incident
- * - Linked to a user subscription
- * - Tracks delivery status and sent time
- */
+/// Alert
+/// -----
+/// Represents a delivered or pending notification related to an incident.
+/// Features:
+/// - Linked to an incident
+/// - Linked to a user subscription
+/// - Tracks delivery status and sent time
 model Alert {
   id             String              @id @default(uuid())
   incidentId     String              @map("incident_id")
@@ -482,20 +451,18 @@ model Alert {
   @@map("alerts")
 }
 
-/**
- * Route
- * -----
- * Represents a saved route estimation between two points.
- * Includes:
- * - Origin and destination names and coordinates
- * - Estimated distance and duration
- * - Avoidance preferences
- * - Route metadata
- * - Creator reference
- *
- * Purpose:
- * - Persist route calculations for later retrieval and analysis
- */
+/// Route
+/// -----
+/// Represents a saved route estimation between two points.
+/// Includes:
+/// - Origin and destination names and coordinates
+/// - Estimated distance and duration
+/// - Avoidance preferences
+/// - Route metadata
+/// - Creator reference
+///
+/// Purpose:
+/// - Persist route calculations for later retrieval and analysis
 model Route {
   id                   String   @id @default(uuid())
   originName           String   @map("origin_name")
@@ -517,13 +484,11 @@ model Route {
   @@map("routes")
 }
 
-/**
- * ExternalApiLog
- * --------------
- * Stores logs for requests made to external APIs.
- * Purpose:
- * - Support monitoring, debugging, and integration auditing
- */
+/// ExternalApiLog
+/// --------------
+/// Stores logs for requests made to external APIs.
+/// Purpose:
+/// - Support monitoring, debugging, and integration auditing
 model ExternalApiLog {
   id             String   @id @default(uuid())
   providerName   String   @map("provider_name")
@@ -540,18 +505,16 @@ model ExternalApiLog {
   @@map("external_api_logs")
 }
 
-/**
- * RefreshToken
- * ------------
- * Stores refresh tokens used for authentication.
- * Security:
- * - Token values are stored as hashes
- * - Supports expiration and revocation
- * Purpose:
- * - Support secure token refresh workflow
- * - Track token expiration and revocation
- * - Improve session management security
- */
+/// RefreshToken
+/// ------------
+/// Stores refresh tokens used for authentication.
+/// Security:
+/// - Token values are stored as hashes
+/// - Supports expiration and revocation
+/// Purpose:
+/// - Support secure token refresh workflow
+/// - Track token expiration and revocation
+/// - Improve session management security
 model RefreshToken {
   id        String    @id @default(uuid())
   userId    String    @map("user_id")
