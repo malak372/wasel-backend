@@ -1,5 +1,8 @@
 # Base image
-FROM node:18-alpine
+FROM node:20-alpine
+
+# Install OpenSSL (Required for Prisma engine on Alpine)
+RUN apk add --no-cache openssl
 
 # Create app directory
 WORKDIR /usr/src/app
@@ -8,14 +11,14 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install exact versions from lockfile
-RUN npm ci
+# Install dependencies
+RUN npm install --legacy-peer-deps
 
-# Generate prisma client
-RUN npx prisma generate
-
-# Bundle app source
+# Copy all project files FIRST (so prisma.config.ts is included)
 COPY . .
+
+# Generate prisma client NOW
+RUN npx prisma generate
 
 # Build the application
 RUN npm run build
@@ -24,4 +27,4 @@ RUN npm run build
 EXPOSE 3000
 
 # Command to run the application
-CMD [ "npm", "run", "start:prod" ]
+CMD [ "npm", "run", "start" ]

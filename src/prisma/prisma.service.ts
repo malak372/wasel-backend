@@ -1,57 +1,25 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
-/**
- * PrismaService
- * -------------
- * Author: Malak
- *
- * A centralized database service that extends PrismaClient
- * and integrates it with the NestJS application lifecycle.
- *
- * This service is responsible for:
- * - Establishing a connection to the database when the application starts
- * - Gracefully closing the connection when the application shuts down
- * - Providing a shared Prisma client instance across the application
- *
- * Responsibilities:
- * - Acts as a single source of truth for database access
- * - Enables dependency injection of Prisma into other services and resolvers
- * - Manages connection lifecycle automatically
- *
- * Lifecycle Hooks:
- * - onModuleInit: Called when the module is initialized
- * - onModuleDestroy: Called when the application is shutting down
- *
- * Notes:
- * - Extends PrismaClient to expose all Prisma query methods
- * - Used across services (Auth, Reports, Routes, etc.)
- * - Ensures efficient connection handling in NestJS environment
- */
 @Injectable()
-export class PrismaService
-  extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
-{
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(PrismaService.name);
 
-  /**
-   * onModuleInit
-   * ------------
-   * Establishes a database connection when the module initializes.
-   *
-   * Called automatically by NestJS during application startup.
-   */
-  async onModuleInit() {
-    await this.$connect();
+  constructor() {
+    super({
+      datasourceUrl: process.env.DATABASE_URL,
+    });
   }
 
-  /**
-   * onModuleDestroy
-   * ----------------
-   * Closes the database connection when the module is destroyed.
-   *
-   * Called automatically by NestJS during application shutdown.
-   */
+  async onModuleInit() {
+    try {
+      await this.$connect();
+      this.logger.log('🚀 Successfully connected to the database!');
+    } catch (error) {
+      this.logger.error('❌ Connection failed:', error);
+    }
+  }
+
   async onModuleDestroy() {
     await this.$disconnect();
   }
