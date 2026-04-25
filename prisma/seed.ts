@@ -7,7 +7,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 /**
  * Seed Script
  * -----------
- * Author: All Team Members
+ * Author: Malak
  *
  * This script initializes the database with default seed data
  * required for development, testing, and demonstration purposes.
