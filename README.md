@@ -257,6 +257,7 @@ To run the entire stack using Docker:
 docker compose down
 docker compose build --no-cache
 docker compose up
+```
 
 
 ---
