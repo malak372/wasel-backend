@@ -1,23 +1,8 @@
-/// Prisma Schema
-/// -------------
-/// Project: Wasel Backend
-/// Author: All Team Members
-/// This schema defines the complete database structure for the system.
-/// It includes:
-/// - Core entities such as users, incidents, reports, routes, and alerts
-/// - Enum definitions for controlled values
-/// - Relationships between models
-/// - Indexes and constraints for performance and data integrity
-/// Database Provider:
-/// - PostgreSQL
-/// ORM:
-/// - Prisma Client
-/// Purpose:
-/// - Acts as the single source of truth for the database design
-/// - Enables type-safe database access through Prisma Client
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
+
 
 generator client {
   provider = "prisma-client-js"
