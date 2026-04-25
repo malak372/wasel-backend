@@ -249,7 +249,9 @@ docker compose up
 
 ---
 
-# Configure environment variables (.env)
+## ⚙️ Configure environment variables (.env)
+
+```env
 DATABASE_URL=your_database_url
 JWT_ACCESS_SECRET=your_access_secret
 JWT_REFRESH_SECRET=your_refresh_secret
