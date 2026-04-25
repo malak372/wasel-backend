@@ -27,6 +27,7 @@
 - Worked on GraphQL
 - Created and organized Wiki documentation
 - Documented APIs using API Dog
+- Contributed to part of the database design
 
 ---
 
