@@ -233,8 +233,7 @@ http://localhost:3000/graphql
 3. Run queries from the Wiki
 
 ---
-
-​## ⚡ **Performance Testing (k6)**
+## ⚡ **Performance Testing (k6)**
 
 We conducted load tests to ensure system stability.
 
@@ -250,8 +249,7 @@ p95 latency and error rates are documented in the Wiki.
 🔗 Link: https://github.com/malak372/wasel-backend/wiki/K6-Testing
 
 ---
-
-​## 🐳 **Docker Setup**
+## 🐳 **Docker Setup**
 
 To run the entire stack using Docker:
 
@@ -262,7 +260,6 @@ docker compose up
 
 
 ---
-
 ## ⚙️ Configure environment variables (.env)
 
 ```env
