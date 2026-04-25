@@ -234,7 +234,7 @@ http://localhost:3000/graphql
 
 ---
 
-​## ⚡ Performance Testing (k6)
+​## ⚡ **Performance Testing (k6)**
 
 We conducted load tests to ensure system stability.
 
@@ -251,7 +251,7 @@ p95 latency and error rates are documented in the Wiki.
 
 ---
 
-​## 🐳 Docker Setup
+​## 🐳 **Docker Setup**
 
 To run the entire stack using Docker:
 
