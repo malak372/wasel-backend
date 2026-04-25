@@ -4,7 +4,7 @@ import { PrismaService } from './prisma.service';
 /**
  * PrismaModule
  * ------------
- * Author: Malak
+ * Author: All Team Members
  *
  * Global module responsible for providing database access using Prisma.
  *
