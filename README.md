@@ -234,14 +234,28 @@ http://localhost:3000/graphql
 
 ---
 
-​## Performance Testing (k6)
-​We conducted load tests to ensure system stability:
-​Scenarios: Mixed Load, Read/Write Heavy, Spike, and Soak testing.
-​Results: p95 latency and error rates are documented in the [Wiki Performance Page].
-Link: https://github.com/malak372/wasel-backend/wiki/K6-Testing
+​## ⚡ Performance Testing (k6)
 
-​##🐳 Docker Setup
-​To run the entire stack using Docker:
+We conducted load tests to ensure system stability.
+
+### Scenarios:
+- Mixed Load  
+- Read/Write Heavy  
+- Spike Testing  
+- Soak Testing  
+
+### Results:
+p95 latency and error rates are documented in the Wiki.
+
+🔗 Link: https://github.com/malak372/wasel-backend/wiki/K6-Testing
+
+---
+
+​## 🐳 Docker Setup
+
+To run the entire stack using Docker:
+
+```bash
 docker compose down
 docker compose build --no-cache
 docker compose up
@@ -266,10 +280,10 @@ OSRM_BASE_URL=https://router.project-osrm.org
 
 ## 👥 Team
 
-* Malak
-*Rahaf
-*Eman
-*Yamama
+- Malak  
+- Rahaf  
+- Eman  
+- Yamama  
 
 ---
 
