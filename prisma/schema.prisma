@@ -8,7 +8,6 @@ generator client {
   provider = "prisma-client-js"
 }
 
-
 /// UserRole
 /// --------
 /// Defines the available roles in the system.
