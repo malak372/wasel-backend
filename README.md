@@ -49,12 +49,35 @@ It exposes this data via **RESTful APIs** and **GraphQL**, enabling efficient, s
 
 ## 🏗️ Architecture
 
-The system follows a **Layered Architecture** to ensure scalability and maintainability:
+The system follows a combination of **Modular** and **Layered Architecture** to ensure scalability, maintainability, and clear separation of concerns.
 
-* **Controller Layer:** Handles incoming HTTP requests
-* **Service Layer:** Contains business logic
-* **Data Access Layer:** Prisma ORM & database interactions
-* **Integration Layer:** External APIs and services
+### 🧩 Modular Design
+The system is divided into independent modules based on features:
+
+- **Auth**
+- **Incidents**
+- **Citizen Reports**
+- **Routes**
+- **Alerts**
+- **Checkpoints**
+
+Each module is responsible for a specific domain and can be developed, tested, and maintained independently.
+
+---
+
+### 🏗️ Layered Architecture
+Inside each module, we apply a layered structure:
+
+- **Controller Layer:** Handles incoming HTTP requests and routes them to the appropriate services  
+- **Service Layer:** Contains business logic and core system functionality  
+- **Data Access Layer:** Uses Prisma ORM to interact with the database (Supabase PostgreSQL)  
+- **Integration Layer:** Handles communication with external APIs (Routing API, Weather API), including timeout, retry, caching, and logging  
+
+---
+
+### 📌 Summary
+- **Modular Architecture →** Organizes the system into independent features  
+- **Layered Architecture →** Organizes the internal structure of each module  
 
 ---
 
